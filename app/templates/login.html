@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Sign in · TS Pro Backup{% endblock %}
+{% block body %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="auth-logo" role="img" aria-label="Trusted Servants Pro"
+            style="--logo: url('{{ url_for('static', filename='img/logo_tspro_white.svg') }}');"></span>
+      <p class="auth-tag">Backup</p>
+      <p class="muted">Sign in to manage your backups</p>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Username
+        <input name="username" type="text" autocomplete="username" autofocus required>
+      </label>
+      <label>Password
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      {% if settings and settings.turnstile_enabled and settings.turnstile_site_key %}
+      <div class="cf-turnstile auth-turnstile" data-sitekey="{{ settings.turnstile_site_key }}" data-theme="dark"></div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+    </form>
+    {% if settings and settings.turnstile_enabled and settings.turnstile_site_key %}
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
+  </div>
+  <p class="auth-foot muted">TS Pro Backup · off-site backup storage · v{{ app_version }}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en" data-theme="default">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}TS Pro Backup{% endblock %}</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon_bk.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='img/favicon_bk.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css', v=app_version) }}">
+  {% block head_extra %}{% endblock %}
+</head>
+<body>
+{% block body %}
+<div class="shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-logo" role="img" aria-label="Trusted Servants Pro"
+            style="--logo: url('{{ url_for('static', filename='img/logo_tspro_white.svg') }}');"></span>
+      <span class="brand-sub">Backup</span>
+    </div>
+    <nav class="sidebar-nav">
+      {% set _ep = request.endpoint %}
+      <a href="{{ url_for('main.dashboard') }}" class="nav-link {{ 'active' if _ep == 'main.dashboard' }}">{{ icon('dashboard') }}<span>Dashboard</span></a>
+      <a href="{{ url_for('main.sites') }}" class="nav-link {{ 'active' if _ep and _ep.startswith('main.site') }}">{{ icon('server') }}<span>Sites</span></a>
+      <a href="{{ url_for('main.backups') }}" class="nav-link {{ 'active' if _ep == 'main.backups' }}">{{ icon('archive') }}<span>Backups</span></a>
+    </nav>
+    <div class="sidebar-foot">
+      {% if current_user.is_authenticated %}
+      <div class="sidebar-user">
+        <span class="su-avatar">{{ icon('user') }}</span>
+        <span class="su-name">{{ current_user.username }}</span>
+        <span class="su-role">{{ current_user.role_label }}</span>
+        <button type="button" class="su-gear" data-open-settings title="Settings" aria-label="Settings">{{ icon('settings') }}</button>
+      </div>
+      {% endif %}
+      <a href="{{ url_for('auth.logout') }}" class="nav-link">{{ icon('logout') }}<span>Sign out</span></a>
+      <div class="sidebar-ver">Ver. {{ app_version }}</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+      <div class="topbar-actions">{% block topbar_actions %}{% endblock %}</div>
+    </header>
+
+    <div class="flashes">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+    </div>
+
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</div>
+{% if current_user.is_authenticated %}{% include "_settings_modal.html" %}{% endif %}
+{% endblock %}
+</body>
+</html>

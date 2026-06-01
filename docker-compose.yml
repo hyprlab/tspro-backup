@@ -1,0 +1,26 @@
+services:
+  tspro-backup:
+    # Pull the published image. To build from source instead, uncomment
+    # `build: .` below (it tags the resulting image with this same name).
+    image: viibeware/tspro-backup:${TSPB_VERSION:-latest}
+    # build: .
+    container_name: tspro-backup
+    ports:
+      # Host port is configurable; the container always listens on 8000.
+      - "${TSPB_PORT:-8095}:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      - TSPB_SECRET_KEY=${TSPB_SECRET_KEY:?TSPB_SECRET_KEY must be set in .env}
+      - TSPB_ADMIN_USERNAME=${TSPB_ADMIN_USERNAME:-admin}
+      - TSPB_ADMIN_PASSWORD=${TSPB_ADMIN_PASSWORD:-admin}
+      # Optional: supply a memorable at-rest passphrase so a rebuilt host can
+      # decrypt existing archives. If omitted, a random rest.key is generated
+      # in ./data and used automatically (tied to that volume).
+      - TSPB_REST_PASSPHRASE=${TSPB_REST_PASSPHRASE:-}
+      # Max single upload (MiB). Whole-site bundles can be large.
+      - TSPB_MAX_UPLOAD_MB=${TSPB_MAX_UPLOAD_MB:-8192}
+      # Local dev only: serve over plain HTTP (don't set Secure cookie flag).
+      # Remove / set to 0 behind TLS in production.
+      - TSPB_DEBUG=${TSPB_DEBUG:-0}
+    restart: unless-stopped

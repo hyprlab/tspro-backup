@@ -1,0 +1,85 @@
+{# Secret-reveal modal. Shown once when `new_key` (API key) and/or
+   `new_privkey` (E2EE private key) are in context — after creating a site
+   or rotating one of its secrets. Self-contained: markup + wiring script.
+   Closing removes it from the DOM. Neither secret is recoverable later. #}
+{% if new_key or new_privkey %}
+<div class="modal-overlay" id="key-modal" role="dialog" aria-modal="true" aria-labelledby="key-modal-title">
+  <div class="modal-card">
+    <button type="button" class="modal-close" data-key-modal-close aria-label="Close">{{ icon('x') }}</button>
+    <span class="modal-icon">{{ icon('key') }}</span>
+    <h2 id="key-modal-title" class="modal-title">
+      {% if new_key and new_privkey %}Site credentials{% elif new_key %}New API key{% else %}New encryption key{% endif %}
+    </h2>
+    <p class="muted modal-sub">Copy {{ 'these' if new_key and new_privkey else 'this' }} now — shown only once. Paste into the matching TS&nbsp;Pro backup target.</p>
+
+    {% if new_key %}
+    <div class="key-label">{{ icon('key') }} API key <span class="muted small">— authenticates uploads (stored here only as a hash)</span></div>
+    <div class="key-box"><code id="new-key">{{ new_key }}</code></div>
+    <div class="modal-actions" style="margin-bottom:1rem">
+      <button type="button" class="btn btn-ghost" data-copy-target="new-key">{{ icon('copy') }} Copy API key</button>
+    </div>
+    {% endif %}
+
+    {% if new_privkey %}
+    <div class="key-label">{{ icon('lock') }} Private key <span class="muted small">— decrypts backups at restore; this server never keeps it</span></div>
+    <div class="key-box"><code id="new-privkey">{{ new_privkey }}</code></div>
+    <p class="muted small" style="margin:.4rem 0 0">⚠️ Store this somewhere safe (a password manager). If you lose it, every backup encrypted to this site becomes <strong>permanently unrecoverable</strong> — that is what makes the storage zero-knowledge.</p>
+    <div class="modal-actions" style="margin-bottom:.5rem">
+      <button type="button" class="btn btn-ghost" data-copy-target="new-privkey">{{ icon('copy') }} Copy private key</button>
+    </div>
+    {% endif %}
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-primary" data-key-modal-close>Done</button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var m = document.getElementById('key-modal');
+  if (!m) return;
+  document.body.classList.add('modal-open');
+  function close(){ m.remove(); document.body.classList.remove('modal-open'); document.removeEventListener('keydown', onKey); }
+  function onKey(e){ if (e.key === 'Escape') close(); }
+  m.querySelectorAll('[data-key-modal-close]').forEach(function(b){ b.addEventListener('click', close); });
+  m.addEventListener('mousedown', function(e){ if (e.target === m) close(); });
+  document.addEventListener('keydown', onKey);
+  function copyText(text){
+    // navigator.clipboard only exists in a secure context (HTTPS or
+    // localhost). Over plain-HTTP LAN access it's undefined, so fall back
+    // to a hidden-textarea + execCommand('copy').
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-9999px';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('copy command failed'));
+    });
+  }
+  m.querySelectorAll('[data-copy-target]').forEach(function(copy){
+    copy.addEventListener('click', function(){
+      var orig = copy.innerHTML;
+      var el = document.getElementById(copy.getAttribute('data-copy-target'));
+      copyText(el ? el.textContent : '').then(function(){
+        copy.textContent = 'Copied!';
+        setTimeout(function(){ copy.innerHTML = orig; }, 1500);
+      }).catch(function(){
+        copy.textContent = 'Press Ctrl+C';
+        setTimeout(function(){ copy.innerHTML = orig; }, 2000);
+      });
+    });
+  });
+})();
+</script>
+{% endif %}

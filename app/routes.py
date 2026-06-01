@@ -1,0 +1,322 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Web console routes — dashboard, sites, backups, settings, account.
+
+All gated by login. The console is the operator's view; TS Pro instances
+never touch these routes (they use the ``/api/v1`` blueprint).
+"""
+import os
+from functools import wraps
+
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
+                   render_template, request, send_file, session, url_for)
+from flask_login import current_user, login_required
+
+from .crypto import encrypt
+from .models import (SCOPE_LABELS, SCOPES, AdminUser, Backup, Setting, Site, db)
+from . import storage
+
+bp = Blueprint("main", __name__)
+
+
+def admin_required(fn):
+    """Gate a route to admin users. The settings + user-management
+    endpoints are AJAX/JSON, so a denial returns 403 JSON rather than a
+    redirect."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not getattr(current_user, "is_admin", lambda: False)():
+            return jsonify(ok=False, error="Admin permission required"), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def _int_or_none(val):
+    val = (val or "").strip()
+    if val == "":
+        return None
+    try:
+        return max(0, int(val))
+    except ValueError:
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Dashboard
+# ──────────────────────────────────────────────────────────────────────
+@bp.route("/")
+@login_required
+def dashboard():
+    sites = Site.query.order_by(Site.name).all()
+    backups = Backup.query.all()
+    total_bytes = sum(b.stored_bytes or 0 for b in backups)
+    recent = (Backup.query.order_by(Backup.created_at.desc()).limit(10).all())
+    by_scope = {s: 0 for s in SCOPES}
+    for b in backups:
+        by_scope[b.scope] = by_scope.get(b.scope, 0) + 1
+    stats = {
+        "sites": len(sites),
+        "sites_enabled": sum(1 for s in sites if s.enabled),
+        "backups": len(backups),
+        "total_bytes": total_bytes,
+        "by_scope": by_scope,
+    }
+    return render_template("dashboard.html", sites=sites, recent=recent,
+                           stats=stats, scope_labels=SCOPE_LABELS)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Sites
+# ──────────────────────────────────────────────────────────────────────
+@bp.route("/sites")
+@login_required
+def sites():
+    rows = Site.query.order_by(Site.name).all()
+    settings = Setting.get()
+    new_key = session.pop("new_api_key", None)
+    new_privkey = session.pop("new_e2ee_privkey", None)
+    new_key_site = session.pop("new_api_key_site", None)
+    return render_template("sites.html", sites=rows, settings=settings,
+                           new_key=new_key, new_privkey=new_privkey,
+                           new_key_site=new_key_site)
+
+
+@bp.route("/sites/new", methods=["GET", "POST"])
+@login_required
+def site_new():
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Site name is required", "danger")
+            return redirect(url_for("main.site_new"))
+        site = Site(name=name, enabled=True)
+        _apply_site_form(site)
+        raw_key = site.issue_api_key()
+        privkey = site.issue_keypair()
+        db.session.add(site)
+        db.session.commit()
+        session["new_api_key"] = raw_key
+        session["new_e2ee_privkey"] = privkey
+        session["new_api_key_site"] = site.id
+        flash(f"Site “{name}” created. Copy its API key and private key now — neither is shown again.", "success")
+        return redirect(url_for("main.sites"))
+    return render_template("site_edit.html", site=None, settings=Setting.get())
+
+
+@bp.route("/sites/<int:site_id>", methods=["GET", "POST"])
+@login_required
+def site_edit(site_id):
+    site = Site.query.get_or_404(site_id)
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            flash("Site name is required", "danger")
+            return redirect(url_for("main.site_edit", site_id=site_id))
+        site.name = name
+        _apply_site_form(site)
+        db.session.commit()
+        flash("Site updated", "success")
+        return redirect(url_for("main.site_edit", site_id=site_id))
+    # Surface a freshly rotated key once, on this page (set by
+    # site_rotate_key / site_rotate_keypair).
+    new_key = None
+    new_privkey = None
+    if session.get("new_api_key_site") == site.id:
+        new_key = session.pop("new_api_key", None)
+        new_privkey = session.pop("new_e2ee_privkey", None)
+        session.pop("new_api_key_site", None)
+    return render_template("site_edit.html", site=site, settings=Setting.get(),
+                           new_key=new_key, new_privkey=new_privkey)
+
+
+def _apply_site_form(site):
+    site.enabled = bool(request.form.get("enabled"))
+    site.keep_daily = _int_or_none(request.form.get("keep_daily"))
+    site.keep_weekly = _int_or_none(request.form.get("keep_weekly"))
+    site.keep_monthly = _int_or_none(request.form.get("keep_monthly"))
+    site.keep_yearly = _int_or_none(request.form.get("keep_yearly"))
+    enc = request.form.get("encrypt_at_rest", "inherit")
+    site.encrypt_at_rest = {"on": True, "off": False}.get(enc, None)
+    e2ee = request.form.get("require_e2ee", "inherit")
+    site.require_e2ee = {"on": True, "off": False}.get(e2ee, None)
+
+
+@bp.route("/sites/<int:site_id>/rotate-key", methods=["POST"])
+@login_required
+def site_rotate_key(site_id):
+    site = Site.query.get_or_404(site_id)
+    raw_key = site.issue_api_key()
+    db.session.commit()
+    session["new_api_key"] = raw_key
+    session["new_api_key_site"] = site.id
+    flash("API key rotated. The previous key no longer works.", "success")
+    return redirect(url_for("main.site_edit", site_id=site.id))
+
+
+@bp.route("/sites/<int:site_id>/rotate-keypair", methods=["POST"])
+@login_required
+def site_rotate_keypair(site_id):
+    site = Site.query.get_or_404(site_id)
+    privkey = site.issue_keypair()
+    db.session.commit()
+    session["new_e2ee_privkey"] = privkey
+    session["new_api_key_site"] = site.id
+    flash("Encryption keypair rotated. New backups use the new key; keep the "
+          "OLD private key to decrypt backups already stored.", "success")
+    return redirect(url_for("main.site_edit", site_id=site.id))
+
+
+@bp.route("/sites/<int:site_id>/ack-key", methods=["POST"])
+@login_required
+def site_ack_key(site_id):
+    site = Site.query.get_or_404(site_id)
+    site.e2ee_key_ack = True
+    db.session.commit()
+    flash("Got it — we'll stop reminding you about this site's private key.", "success")
+    return redirect(url_for("main.site_edit", site_id=site.id))
+
+
+@bp.route("/sites/<int:site_id>/delete", methods=["POST"])
+@login_required
+def site_delete(site_id):
+    site = Site.query.get_or_404(site_id)
+    app = current_app._get_current_object()
+    for b in list(site.backups):
+        storage.delete_blob(app, b)
+    name = site.name
+    db.session.delete(site)
+    db.session.commit()
+    flash(f"Site “{name}” and all its backups were deleted", "success")
+    return redirect(url_for("main.sites"))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Backups
+# ──────────────────────────────────────────────────────────────────────
+@bp.route("/backups")
+@login_required
+def backups():
+    q = Backup.query
+    site_id = request.args.get("site", type=int)
+    scope = request.args.get("scope")
+    if site_id:
+        q = q.filter_by(site_id=site_id)
+    if scope in SCOPES:
+        q = q.filter_by(scope=scope)
+    rows = q.order_by(Backup.created_at.desc()).all()
+    sites = Site.query.order_by(Site.name).all()
+    return render_template("backups.html", backups=rows, sites=sites,
+                           scope_labels=SCOPE_LABELS, sel_site=site_id, sel_scope=scope)
+
+
+@bp.route("/backups/<int:backup_id>/download")
+@login_required
+def backup_download(backup_id):
+    backup = Backup.query.get_or_404(backup_id)
+    app = current_app._get_current_object()
+    try:
+        path, is_temp = storage.open_for_download(app, backup)
+    except Exception as e:  # noqa: BLE001
+        current_app.logger.error("download failed for backup %s: %s", backup_id, e)
+        abort(500)
+    resp = send_file(path, as_attachment=True, download_name=backup.original_name)
+    if is_temp:
+        @resp.call_on_close
+        def _cleanup():
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+    return resp
+
+
+@bp.route("/backups/<int:backup_id>/delete", methods=["POST"])
+@login_required
+def backup_delete(backup_id):
+    backup = Backup.query.get_or_404(backup_id)
+    app = current_app._get_current_object()
+    storage.delete_blob(app, backup)
+    db.session.delete(backup)
+    db.session.commit()
+    flash("Backup deleted", "success")
+    return redirect(request.referrer or url_for("main.backups"))
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Settings modal endpoints (AJAX/JSON) — server config + user management
+# ──────────────────────────────────────────────────────────────────────
+@bp.route("/settings", methods=["POST"])
+@login_required
+@admin_required
+def settings():
+    s = Setting.get()
+    s.turnstile_enabled = bool(request.form.get("turnstile_enabled"))
+    s.turnstile_site_key = (request.form.get("turnstile_site_key") or "").strip() or None
+    secret = (request.form.get("turnstile_secret_key") or "").strip()
+    if secret:
+        s.turnstile_secret_key_enc = encrypt(secret)
+    elif request.form.get("clear_turnstile_secret"):
+        s.turnstile_secret_key_enc = None
+
+    s.require_e2ee = bool(request.form.get("require_e2ee"))
+    s.encrypt_at_rest = bool(request.form.get("encrypt_at_rest"))
+    s.keep_daily = _int_or_none(request.form.get("keep_daily")) or 0
+    s.keep_weekly = _int_or_none(request.form.get("keep_weekly")) or 0
+    s.keep_monthly = _int_or_none(request.form.get("keep_monthly")) or 0
+    s.keep_yearly = _int_or_none(request.form.get("keep_yearly")) or 0
+    db.session.commit()
+    return jsonify(ok=True, message="Server settings saved")
+
+
+@bp.route("/account", methods=["POST"])
+@login_required
+def account():
+    """Change the signed-in user's own password. Available to every role."""
+    cur = request.form.get("current_password") or ""
+    new = request.form.get("new_password") or ""
+    confirm = request.form.get("confirm_password") or ""
+    if not current_user.check_password(cur):
+        return jsonify(ok=False, error="Current password is incorrect"), 400
+    if len(new) < 8:
+        return jsonify(ok=False, error="New password must be at least 8 characters"), 400
+    if new != confirm:
+        return jsonify(ok=False, error="New passwords do not match"), 400
+    current_user.set_password(new)
+    db.session.commit()
+    return jsonify(ok=True, message="Password changed")
+
+
+@bp.route("/users", methods=["POST"])
+@login_required
+@admin_required
+def user_create():
+    username = (request.form.get("username") or "").strip()
+    password = request.form.get("password") or ""
+    role = request.form.get("role") or "user"
+    if role not in ("admin", "user"):
+        role = "user"
+    if not username:
+        return jsonify(ok=False, error="Username is required"), 400
+    if len(password) < 8:
+        return jsonify(ok=False, error="Password must be at least 8 characters"), 400
+    if AdminUser.query.filter(db.func.lower(AdminUser.username) == username.lower()).first():
+        return jsonify(ok=False, error=f"A user named “{username}” already exists"), 400
+    u = AdminUser(username=username, role=role)
+    u.set_password(password)
+    db.session.add(u)
+    db.session.commit()
+    return jsonify(ok=True, message=f"User “{username}” added",
+                   user={"id": u.id, "username": u.username, "role": u.role})
+
+
+@bp.route("/users/<int:uid>/delete", methods=["POST"])
+@login_required
+@admin_required
+def user_delete(uid):
+    u = AdminUser.query.get_or_404(uid)
+    if u.id == current_user.id:
+        return jsonify(ok=False, error="You can't delete your own account"), 400
+    if u.is_admin() and AdminUser.query.filter_by(role="admin").count() <= 1:
+        return jsonify(ok=False, error="Can't delete the last admin"), 400
+    db.session.delete(u)
+    db.session.commit()
+    return jsonify(ok=True, message=f"User “{u.username}” deleted", id=uid)

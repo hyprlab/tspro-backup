@@ -1,0 +1,228 @@
+{# Global tabbed Settings modal, opened from the sidebar-footer gear.
+   Server + Users tabs are admin-only; Account (own password) is for all.
+   Forms submit via fetch and report inline — the modal never reloads. #}
+{% set _admin = current_user.is_admin() %}
+<div class="modal-overlay settings-modal" id="settings-modal" role="dialog" aria-modal="true" aria-hidden="true">
+  <div class="modal-card settings-card">
+    <button type="button" class="modal-close" data-settings-close aria-label="Close">{{ icon('x') }}</button>
+    <h2 class="modal-title settings-title">{{ icon('settings') }} Settings</h2>
+
+    <div class="tabs" role="tablist">
+      {% if _admin %}
+      <button type="button" class="tab is-active" data-tab="server">{{ icon('settings') }} Server</button>
+      <button type="button" class="tab" data-tab="users">{{ icon('user') }} Users</button>
+      {% endif %}
+      <button type="button" class="tab {{ 'is-active' if not _admin }}" data-tab="account">{{ icon('lock') }} Account</button>
+    </div>
+
+    <div class="settings-msg flash" role="status" hidden></div>
+
+    <div class="settings-body">
+    {% if _admin %}
+    {# ── Server settings ─────────────────────────────────────────── #}
+    <section class="tab-panel is-active" data-panel="server">
+      <form class="form ajax-form" data-endpoint="{{ url_for('main.settings') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <fieldset class="fieldset">
+          <legend>{{ icon('shield') }} Cloudflare Turnstile</legend>
+          <p class="muted">Adds a Turnstile challenge to the console sign-in. The site key is public; the secret is stored encrypted.</p>
+          <label class="check">
+            <input type="checkbox" name="turnstile_enabled" value="1" {{ 'checked' if settings.turnstile_enabled }}>
+            <span>Enable Turnstile on the login page</span>
+          </label>
+          <label class="field"><span>Site key</span>
+            <input name="turnstile_site_key" type="text" value="{{ settings.turnstile_site_key or '' }}" placeholder="0x4AAAAAAA…"></label>
+          <label class="field"><span>Secret key</span>
+            <input name="turnstile_secret_key" type="password" placeholder="{{ '•••••••• (set — leave blank to keep)' if settings.turnstile_secret_key_enc else '0x4AAAAAAA…' }}"></label>
+          {% if settings.turnstile_secret_key_enc %}
+          <label class="check"><input type="checkbox" name="clear_turnstile_secret" value="1"><span>Clear stored secret key</span></label>
+          {% endif %}
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>{{ icon('shield') }} End-to-end encryption</legend>
+          <p class="muted">Each site gets its own keypair. TS Pro encrypts every backup to the site's <strong>public</strong> key before upload; only the matching <strong>private</strong> key — shown once at site creation and never stored here — can decrypt it. This server holds only ciphertext, so it can't read your backups even if fully compromised. When required, the API <strong>rejects any upload that isn't already encrypted</strong>, so plaintext can never land here.</p>
+          <label class="check">
+            <input type="checkbox" name="require_e2ee" value="1" {{ 'checked' if settings.require_e2ee }}>
+            <span>Require end-to-end encryption (recommended)</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>{{ icon('lock') }} Server-side encryption at rest</legend>
+          <p class="muted">Defense-in-depth for the storage volume: wraps each stored blob with a key <strong>this server holds</strong> (<code>TSPB_REST_PASSPHRASE</code> / <code>rest.key</code>). This is <strong>not</strong> end-to-end — the server can remove this layer. Leave off if you rely on E2EE above.</p>
+          <label class="check">
+            <input type="checkbox" name="encrypt_at_rest" value="1" {{ 'checked' if settings.encrypt_at_rest }}>
+            <span>Also encrypt stored blobs with a server-held key</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend>{{ icon('clock') }} Default retention</legend>
+          <p class="muted">Default grandfather-father-son policy per site &amp; scope. Keep the newest backup of each recent day / week / month / year. 0 disables a tier.</p>
+          <div class="grid-4">
+            <label class="field"><span>Days</span><input name="keep_daily" type="number" min="0" value="{{ settings.keep_daily }}"></label>
+            <label class="field"><span>Weeks</span><input name="keep_weekly" type="number" min="0" value="{{ settings.keep_weekly }}"></label>
+            <label class="field"><span>Months</span><input name="keep_monthly" type="number" min="0" value="{{ settings.keep_monthly }}"></label>
+            <label class="field"><span>Years</span><input name="keep_yearly" type="number" min="0" value="{{ settings.keep_yearly }}"></label>
+          </div>
+        </fieldset>
+
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
+      </form>
+    </section>
+
+    {# ── Users ───────────────────────────────────────────────────── #}
+    <section class="tab-panel" data-panel="users">
+      <p class="muted">People who can sign in to this console. <strong>Admins</strong> get full access including these settings; <strong>normal</strong> users manage sites &amp; backups and their own password only.</p>
+      <table class="tbl users-tbl">
+        <thead><tr><th>User</th><th>Permissions</th><th></th></tr></thead>
+        <tbody id="users-tbody">
+          {% for u in console_users %}
+          <tr data-user-id="{{ u.id }}">
+            <td>{{ u.username }}{% if u.id == current_user.id %} <span class="muted small">(you)</span>{% endif %}</td>
+            <td><span class="badge badge-{{ 'full' if u.is_admin() else 'off' }}">{{ u.role_label }}</span></td>
+            <td class="row-actions">
+              {% if u.id != current_user.id %}
+              <button type="button" class="btn btn-ghost btn-sm btn-danger-ghost" data-del-user="{{ u.id }}" aria-label="Delete {{ u.username }}">{{ icon('trash') }}</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <form class="form ajax-form add-user-form" data-endpoint="{{ url_for('main.user_create') }}" data-reset>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <h3 class="settings-subhead">{{ icon('plus') }} Add user</h3>
+        <div class="grid-2">
+          <label class="field"><span>Username</span><input name="username" type="text" autocomplete="off" required></label>
+          <label class="field"><span>Password</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        </div>
+        <label class="field"><span>Permissions</span>
+          <select name="role">
+            <option value="user">Normal — manage sites &amp; backups</option>
+            <option value="admin">Admin — full access incl. settings &amp; users</option>
+          </select>
+        </label>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{{ icon('plus') }} Add user</button></div>
+      </form>
+    </section>
+    {% endif %}
+
+    {# ── Account (own password) ──────────────────────────────────── #}
+    <section class="tab-panel {{ 'is-active' if not _admin }}" data-panel="account">
+      <form class="form ajax-form" data-endpoint="{{ url_for('main.account') }}" data-reset>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="muted">Change the password for <strong>{{ current_user.username }}</strong>.</p>
+        <label class="field"><span>Current password</span><input name="current_password" type="password" autocomplete="current-password" required></label>
+        <label class="field"><span>New password</span><input name="new_password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label class="field"><span>Confirm new password</span><input name="confirm_password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Update password</button></div>
+      </form>
+    </section>
+    </div>
+  </div>
+</div>
+
+<template id="user-row-tpl">
+  <tr>
+    <td class="u-name"></td>
+    <td><span class="badge u-role"></span></td>
+    <td class="row-actions"><button type="button" class="btn btn-ghost btn-sm btn-danger-ghost u-del">{{ icon('trash') }}</button></td>
+  </tr>
+</template>
+
+<script>
+(function(){
+  var modal = document.getElementById('settings-modal');
+  if (!modal) return;
+  var msg = modal.querySelector('.settings-msg');
+  var CSRF = (modal.querySelector('input[name=csrf_token]') || {}).value || '';
+
+  function open(){ modal.classList.add('is-open'); modal.setAttribute('aria-hidden','false'); document.body.classList.add('modal-open'); }
+  function close(){ modal.classList.remove('is-open'); modal.setAttribute('aria-hidden','true'); document.body.classList.remove('modal-open'); hideMsg(); }
+  function showMsg(text, kind){ msg.textContent = text; msg.className = 'settings-msg flash flash-' + (kind || 'success'); msg.hidden = false; }
+  function hideMsg(){ msg.hidden = true; msg.textContent = ''; }
+  function esc(s){ var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  document.querySelectorAll('[data-open-settings]').forEach(function(b){
+    b.addEventListener('click', function(e){ e.preventDefault(); open(); });
+  });
+  modal.querySelectorAll('[data-settings-close]').forEach(function(b){ b.addEventListener('click', close); });
+  modal.addEventListener('mousedown', function(e){ if (e.target === modal) close(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal.classList.contains('is-open')) close(); });
+
+  // Tabs
+  var tabs = modal.querySelectorAll('.tab');
+  tabs.forEach(function(t){ t.addEventListener('click', function(){
+    tabs.forEach(function(x){ x.classList.remove('is-active'); });
+    t.classList.add('is-active');
+    modal.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.toggle('is-active', p.dataset.panel === t.dataset.tab); });
+    hideMsg();
+  }); });
+
+  // AJAX form submit
+  modal.querySelectorAll('.ajax-form').forEach(function(form){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var btn = form.querySelector('button[type=submit]');
+      if (btn) btn.disabled = true;
+      fetch(form.dataset.endpoint, {
+        method: 'POST', body: new FormData(form), credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'fetch' }
+      }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+        .then(function(res){
+          if (res.ok && res.j.ok){
+            showMsg(res.j.message || 'Saved', 'success');
+            if (form.dataset.reset) form.reset();
+            if (res.j.user) addUserRow(res.j.user);
+          } else {
+            showMsg((res.j && res.j.error) || 'Something went wrong', 'danger');
+          }
+        }).catch(function(){ showMsg('Network error — please try again', 'danger'); })
+        .finally(function(){ if (btn) btn.disabled = false; });
+    });
+  });
+
+  // Add a user row from the template
+  function addUserRow(u){
+    var tb = document.getElementById('users-tbody');
+    var tpl = document.getElementById('user-row-tpl');
+    if (!tb || !tpl) return;
+    var node = tpl.content.firstElementChild.cloneNode(true);
+    node.setAttribute('data-user-id', u.id);
+    node.querySelector('.u-name').textContent = u.username;
+    var role = node.querySelector('.u-role');
+    role.textContent = (u.role === 'admin') ? 'Admin' : 'User';
+    role.classList.add(u.role === 'admin' ? 'badge-full' : 'badge-off');
+    node.querySelector('.u-del').setAttribute('data-del-user', u.id);
+    tb.appendChild(node);
+  }
+
+  // Delete user (event delegation)
+  var tbody = document.getElementById('users-tbody');
+  if (tbody){
+    tbody.addEventListener('click', function(e){
+      var btn = e.target.closest('[data-del-user]');
+      if (!btn) return;
+      var id = btn.getAttribute('data-del-user');
+      if (!confirm('Delete this user? They will no longer be able to sign in.')) return;
+      var fd = new FormData(); fd.append('csrf_token', CSRF);
+      fetch('/users/' + id + '/delete', {
+        method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' }
+      }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+        .then(function(res){
+          if (res.ok && res.j.ok){
+            var row = tbody.querySelector('tr[data-user-id="' + id + '"]');
+            if (row) row.remove();
+            showMsg(res.j.message || 'User deleted', 'success');
+          } else {
+            showMsg((res.j && res.j.error) || 'Could not delete user', 'danger');
+          }
+        }).catch(function(){ showMsg('Network error — please try again', 'danger'); });
+    });
+  }
+})();
+</script>

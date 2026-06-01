@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Sites · TS Pro Backup{% endblock %}
+{% block page_title %}Sites{% endblock %}
+{% block topbar_actions %}
+  <a class="btn btn-primary" href="{{ url_for('main.site_new') }}">{{ icon('plus') }} Add site</a>
+{% endblock %}
+{% block content %}
+
+{% include "_key_modal.html" %}
+
+{% if sites %}
+<div class="card">
+  <table class="tbl">
+    <thead>
+      <tr><th>Site</th><th>API key</th><th>Backups</th><th>Last seen</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for s in sites %}
+      <tr>
+        <td><a class="link" href="{{ url_for('main.site_edit', site_id=s.id) }}">{{ s.name }}</a>
+          {% if s.e2ee_public_key and not s.e2ee_key_ack %}<span class="badge badge-warn" title="The private key for this site hasn't been confirmed saved — open the site to resolve.">{{ icon('alert') }} save key</span>{% endif %}
+        </td>
+        <td><code class="muted">{{ s.api_key_prefix }}…</code></td>
+        <td>{{ s.backups | length }} · {{ s.total_bytes | fmt_bytes }}</td>
+        <td title="{{ s.last_seen_at | fmt_dt }}">{{ s.last_seen_at | ago }}</td>
+        <td>
+          {% if s.enabled %}<span class="badge badge-on">Enabled</span>
+          {% else %}<span class="badge badge-off">Disabled</span>{% endif %}
+        </td>
+        <td class="row-actions">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('main.site_edit', site_id=s.id) }}">Edit</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-card">
+  <p class="empty">No sites yet.</p>
+  <a class="btn btn-primary" href="{{ url_for('main.site_new') }}">{{ icon('plus') }} Add your first site</a>
+</div>
+{% endif %}
+
+{% endblock %}
