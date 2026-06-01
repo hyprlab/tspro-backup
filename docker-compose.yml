@@ -2,7 +2,7 @@ services:
   tspro-backup:
     # Pull the published image. To build from source instead, uncomment
     # `build: .` below (it tags the resulting image with this same name).
-    image: viibeware/tspro-backup:${TSPB_VERSION:-latest}
+    image: viibeware/tspro-backup:latest
     # build: .
     container_name: tspro-backup
     ports:
