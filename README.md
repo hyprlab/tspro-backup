@@ -72,7 +72,7 @@ source checkout needed):
 ```yaml
 services:
   tspro-backup:
-    image: viibeware/tspro-backup:${TSPB_VERSION:-latest}
+    image: viibeware/tspro-backup:latest
     container_name: tspro-backup
     ports:
       - "${TSPB_PORT:-8095}:8000"
@@ -185,7 +185,6 @@ Serves on <http://localhost:8000> with plain-HTTP dev cookies.
 |---|---|---|
 | `TSPB_SECRET_KEY` | — (required) | Flask session secret. |
 | `TSPB_PORT` | `8095` | Host port for the console (compose only). |
-| `TSPB_VERSION` | `latest` | Published image tag to run (compose only). |
 | `TSPB_FERNET_KEY` | auto (`data/secret.key`) | Seed for encrypting the Turnstile secret. |
 | `TSPB_REST_PASSPHRASE` | auto (`data/rest.key`) | At-rest encryption passphrase. |
 | `TSPB_ADMIN_USERNAME` / `TSPB_ADMIN_PASSWORD` | `admin` / `admin` | Seed admin (first boot only). |
