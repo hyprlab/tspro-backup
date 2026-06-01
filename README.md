@@ -4,7 +4,7 @@
 
 <h1 align="center">TS Pro Backup</h1>
 
-<p align="center">Off-site, zero-knowledge backup storage for <a href="https://github.com/viibeware">Trusted Servants Pro</a>.</p>
+<p align="center">Off-site, encrypted backup storage for <a href="https://github.com/viibeware">Trusted Servants Pro</a>.</p>
 
 <p align="center">
   <a href="https://hub.docker.com/r/viibeware/tspro-backup"><img alt="Docker Image" src="https://img.shields.io/docker/v/viibeware/tspro-backup?label=docker&sort=semver"></a>
