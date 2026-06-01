@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · TS Pro Backup{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block content %}
+
+<div class="stat-grid">
+  <div class="card stat">
+    <span class="stat-icon">{{ icon('server') }}</span>
+    <div><div class="stat-num">{{ stats.sites }}</div><div class="stat-label">Connected sites</div></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{ icon('archive') }}</span>
+    <div><div class="stat-num">{{ stats.backups }}</div><div class="stat-label">Stored backups</div></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{ icon('hard-drive') }}</span>
+    <div><div class="stat-num">{{ stats.total_bytes | fmt_bytes }}</div><div class="stat-label">On disk</div></div>
+  </div>
+  <div class="card stat">
+    <span class="stat-icon">{{ icon('shield') }}</span>
+    <div>
+      <div class="stat-num">{{ 'Required' if settings.require_e2ee else 'Optional' }}</div>
+      <div class="stat-label">End-to-end encryption</div>
+    </div>
+  </div>
+</div>
+
+<div class="dash-cols">
+  <section class="card">
+    <div class="card-head">
+      <h2>Recent backups</h2>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('main.backups') }}">View all</a>
+    </div>
+    {% if recent %}
+    <table class="tbl">
+      <thead><tr><th>Site</th><th>Scope</th><th>Size</th><th>When</th></tr></thead>
+      <tbody>
+      {% for b in recent %}
+        <tr>
+          <td>{{ b.site.name }}</td>
+          <td><span class="badge badge-{{ 'full' if b.scope == 'full' else 'frontend' }}">{{ b.scope_label }}</span></td>
+          <td>{{ b.size_bytes | fmt_bytes }}</td>
+          <td title="{{ b.created_at | fmt_dt }}">{{ b.created_at | ago }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No backups yet. Add a site and point its TS Pro backup target here.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Sites</h2>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('main.site_new') }}">{{ icon('plus') }} Add</a>
+    </div>
+    {% if sites %}
+    <ul class="site-list">
+      {% for s in sites %}
+      <li>
+        <a href="{{ url_for('main.site_edit', site_id=s.id) }}">
+          <span class="site-dot {{ 'on' if s.enabled else 'off' }}"></span>
+          <span class="site-name">{{ s.name }}</span>
+          <span class="muted">{{ s.backups | length }} backup{{ '' if s.backups|length == 1 else 's' }}</span>
+        </a>
+        <span class="muted small">last seen {{ s.last_seen_at | ago }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No sites yet. <a href="{{ url_for('main.site_new') }}">Create one</a> to get an API key.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% endblock %}

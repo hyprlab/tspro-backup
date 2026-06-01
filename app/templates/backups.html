@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Backups · TS Pro Backup{% endblock %}
+{% block page_title %}Backups{% endblock %}
+{% block content %}
+
+<form class="filters" method="get">
+  <select name="site" onchange="this.form.submit()">
+    <option value="">All sites</option>
+    {% for s in sites %}
+      <option value="{{ s.id }}" {{ 'selected' if sel_site == s.id }}>{{ s.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="scope" onchange="this.form.submit()">
+    <option value="">All scopes</option>
+    <option value="full" {{ 'selected' if sel_scope == 'full' }}>Whole site</option>
+    <option value="frontend" {{ 'selected' if sel_scope == 'frontend' }}>Frontend only</option>
+  </select>
+  <noscript><button class="btn btn-ghost btn-sm" type="submit">Filter</button></noscript>
+</form>
+
+{% if backups %}
+<div class="card">
+  <table class="tbl">
+    <thead>
+      <tr><th>Site</th><th>Scope</th><th>Archive</th><th>Size</th><th>Security</th><th>Created</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for b in backups %}
+      <tr>
+        <td>{{ b.site.name }}</td>
+        <td><span class="badge badge-{{ 'full' if b.scope == 'full' else 'frontend' }}">{{ b.scope_label }}</span></td>
+        <td><code class="muted small">{{ b.original_name }}</code></td>
+        <td>{{ b.size_bytes | fmt_bytes }}</td>
+        <td class="sec-cell">
+          {% if b.client_encrypted %}<span class="badge badge-lock" title="End-to-end encrypted by TS Pro before upload — this server has no key for it">{{ icon('shield') }} E2EE</span>{% endif %}
+          {% if b.encrypted_at_rest %}<span class="badge badge-lock" title="Also wrapped with this server's at-rest key">{{ icon('lock') }} At rest</span>{% endif %}
+          {% if not b.client_encrypted %}<span class="badge badge-warn" title="Not end-to-end encrypted — uploaded as plaintext">{{ icon('alert') }} Not E2EE</span>{% endif %}
+        </td>
+        <td title="{{ b.created_at | fmt_dt }}">{{ b.created_at | ago }}</td>
+        <td class="row-actions">
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('main.backup_download', backup_id=b.id) }}">{{ icon('download') }}</a>
+          <form method="post" action="{{ url_for('main.backup_delete', backup_id=b.id) }}" class="inline-form"
+                onsubmit="return confirm('Delete this backup permanently?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-ghost btn-sm btn-danger-ghost" type="submit">{{ icon('trash') }}</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card empty-card"><p class="empty">No backups match this filter.</p></div>
+{% endif %}
+
+{% endblock %}

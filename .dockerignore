@@ -1,0 +1,22 @@
+# Keep the build context (and final image) clean.
+.git
+.gitignore
+.dockerignore
+.venv/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data & secrets — never bake these into an image.
+.env
+data/
+temp/
+*.db
+*.key
+
+# Docs / dev cruft not needed at runtime.
+README.md
+CHANGELOG.md
+RELEASE_NOTES.md
+CLAUDE.md
+LICENSE

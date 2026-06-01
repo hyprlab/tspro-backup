@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit site' if site else 'New site' }} · TS Pro Backup{% endblock %}
+{% block page_title %}{{ site.name if site else 'New site' }}{% endblock %}
+{% block content %}
+
+{% if site and site.e2ee_public_key and not site.e2ee_key_ack %}
+<div class="card e2ee-reminder">
+  <div class="card-head"><h2>{{ icon('alert') }} Save this site's private key</h2></div>
+  <p class="muted">The private key for <strong>{{ site.name }}</strong> was shown only once, when its keypair was created. It's the <strong>only</strong> thing that can decrypt this site's backups, and this server never keeps a copy — if it wasn't saved, the stored backups are unrecoverable.</p>
+  <ul class="muted small">
+    <li>Saved it (e.g. in a password manager)? Dismiss this reminder below.</li>
+    <li>Didn't save it? <strong>Rotate the encryption keypair</strong> below to generate a fresh one and copy it this time.</li>
+  </ul>
+  <form method="post" action="{{ url_for('main.site_ack_key', site_id=site.id) }}" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary" type="submit">{{ icon('check') }} I've saved the private key</button>
+  </form>
+</div>
+{% endif %}
+
+<form method="post" class="card form"
+      action="{{ url_for('main.site_edit', site_id=site.id) if site else url_for('main.site_new') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <label class="field">
+    <span>Site name <span class="req">*</span></span>
+    <input name="name" type="text" value="{{ site.name if site else '' }}" required placeholder="e.g. Downtown Intergroup">
+  </label>
+
+  <label class="check">
+    <input type="checkbox" name="enabled" value="1" {{ 'checked' if (site.enabled if site else True) }}>
+    <span>Enabled — accept backups from this site's API key</span>
+  </label>
+
+  <fieldset class="fieldset">
+    <legend>{{ icon('clock') }} Retention</legend>
+    <p class="muted">How many recent backups to keep, per scope. Leave a box blank to inherit the
+      server default (shown as placeholder). 0 disables that tier. The newest backup in each kept
+      day / week / month / year is retained; the rest are pruned automatically after each upload.</p>
+    <div class="grid-4">
+      <label class="field"><span>Days</span>
+        <input name="keep_daily" type="number" min="0" value="{{ site.keep_daily if site and site.keep_daily is not none else '' }}" placeholder="{{ settings.keep_daily }}"></label>
+      <label class="field"><span>Weeks</span>
+        <input name="keep_weekly" type="number" min="0" value="{{ site.keep_weekly if site and site.keep_weekly is not none else '' }}" placeholder="{{ settings.keep_weekly }}"></label>
+      <label class="field"><span>Months</span>
+        <input name="keep_monthly" type="number" min="0" value="{{ site.keep_monthly if site and site.keep_monthly is not none else '' }}" placeholder="{{ settings.keep_monthly }}"></label>
+      <label class="field"><span>Years</span>
+        <input name="keep_yearly" type="number" min="0" value="{{ site.keep_yearly if site and site.keep_yearly is not none else '' }}" placeholder="{{ settings.keep_yearly }}"></label>
+    </div>
+  </fieldset>
+
+  <fieldset class="fieldset">
+    <legend>{{ icon('shield') }} End-to-end encryption</legend>
+    <label class="field">
+      <span>Require this site's uploads to be encrypted before they arrive</span>
+      <select name="require_e2ee">
+        {% set e2 = site.require_e2ee if site else none %}
+        <option value="inherit" {{ 'selected' if e2 is none }}>Inherit server default ({{ 'Required' if settings.require_e2ee else 'Optional' }})</option>
+        <option value="on" {{ 'selected' if e2 is true }}>Required — reject unencrypted uploads</option>
+        <option value="off" {{ 'selected' if e2 is false }}>Optional — allow unencrypted uploads</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <fieldset class="fieldset">
+    <legend>{{ icon('lock') }} Server-side encryption at rest</legend>
+    <label class="field">
+      <span>Also wrap this site's stored blobs with a server-held key (not end-to-end)</span>
+      <select name="encrypt_at_rest">
+        {% set ev = site.encrypt_at_rest if site else none %}
+        <option value="inherit" {{ 'selected' if ev is none }}>Inherit server default ({{ 'On' if settings.encrypt_at_rest else 'Off' }})</option>
+        <option value="on" {{ 'selected' if ev is true }}>Always on</option>
+        <option value="off" {{ 'selected' if ev is false }}>Always off</option>
+      </select>
+    </label>
+  </fieldset>
+
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{{ 'Save changes' if site else 'Create site' }}</button>
+    <a class="btn btn-ghost" href="{{ url_for('main.sites') }}">Cancel</a>
+  </div>
+</form>
+
+{% if site %}
+{% include "_key_modal.html" %}
+<div class="card">
+  <div class="card-head"><h2>{{ icon('link') }} Connection details</h2></div>
+  <p class="muted">Configure a <strong>TS Pro Backup</strong> target in this portal's Backups settings with:</p>
+  <table class="kv">
+    <tr><th>API endpoint</th><td><code>{{ request.url_root }}api/v1</code></td></tr>
+    <tr><th>API key</th><td><code class="muted">{{ site.api_key_prefix }}…</code> <span class="muted small">(rotate to reveal a fresh one)</span></td></tr>
+    <tr><th>Site ID</th><td><code>{{ site.id }}</code></td></tr>
+    <tr><th>Encryption key</th><td>
+      {% if site.e2ee_public_key %}<code>{{ site.e2ee_fingerprint }}</code> <span class="muted small">(public-key fingerprint — confirm this matches in TS&nbsp;Pro)</span>
+      {% else %}<span class="muted small">none — rotate to generate one</span>{% endif %}
+    </td></tr>
+  </table>
+  <p class="muted small">The client encrypts each backup to this site's public key; only the private key (shown once at creation) can decrypt it. This server never holds the private key.</p>
+  <div class="inline-form">
+    <form method="post" action="{{ url_for('main.site_rotate_key', site_id=site.id) }}" class="inline-form"
+          onsubmit="return confirm('Rotate the API key? The current key will stop working immediately.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-ghost" type="submit">{{ icon('refresh') }} Rotate API key</button>
+    </form>
+    <form method="post" action="{{ url_for('main.site_rotate_keypair', site_id=site.id) }}" class="inline-form"
+          onsubmit="return confirm('Rotate the encryption keypair? New backups use the new key. Keep the OLD private key to decrypt backups already stored here.')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-ghost" type="submit">{{ icon('refresh') }} Rotate encryption keypair</button>
+    </form>
+  </div>
+</div>
+
+<div class="card danger-zone">
+  <div class="card-head"><h2>{{ icon('alert') }} Danger zone</h2></div>
+  <p class="muted">Deleting this site permanently removes it and all {{ site.backups | length }} stored backup(s).</p>
+  <form method="post" action="{{ url_for('main.site_delete', site_id=site.id) }}"
+        onsubmit="return confirm('Delete this site and ALL its backups? This cannot be undone.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-danger" type="submit">{{ icon('trash') }} Delete site</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
