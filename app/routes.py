@@ -75,9 +75,12 @@ def sites():
     new_key = session.pop("new_api_key", None)
     new_privkey = session.pop("new_e2ee_privkey", None)
     new_key_site = session.pop("new_api_key_site", None)
+    # Fingerprint of the just-created/rotated site, for the reveal modal.
+    new_site = next((s for s in rows if s.id == new_key_site), None) if new_key_site else None
+    new_fingerprint = new_site.e2ee_fingerprint if new_site else None
     return render_template("sites.html", sites=rows, settings=settings,
                            new_key=new_key, new_privkey=new_privkey,
-                           new_key_site=new_key_site)
+                           new_key_site=new_key_site, new_fingerprint=new_fingerprint)
 
 
 @bp.route("/sites/new", methods=["GET", "POST"])
@@ -124,8 +127,10 @@ def site_edit(site_id):
         new_key = session.pop("new_api_key", None)
         new_privkey = session.pop("new_e2ee_privkey", None)
         session.pop("new_api_key_site", None)
+    new_fingerprint = site.e2ee_fingerprint if (new_key or new_privkey) else None
     return render_template("site_edit.html", site=site, settings=Setting.get(),
-                           new_key=new_key, new_privkey=new_privkey)
+                           new_key=new_key, new_privkey=new_privkey,
+                           new_fingerprint=new_fingerprint)
 
 
 def _apply_site_form(site):

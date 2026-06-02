@@ -86,12 +86,12 @@
 <div class="card">
   <div class="card-head"><h2>{{ icon('link') }} Connection details</h2></div>
   <p class="muted">Configure a <strong>TS Pro Backup</strong> target in this portal's Backups settings with:</p>
-  <table class="kv">
-    <tr><th>API endpoint</th><td><code>{{ request.url_root }}api/v1</code></td></tr>
-    <tr><th>API key</th><td><code class="muted">{{ site.api_key_prefix }}…</code> <span class="muted small">(rotate to reveal a fresh one)</span></td></tr>
-    <tr><th>Site ID</th><td><code>{{ site.id }}</code></td></tr>
+  <table class="kv kv-conn">
+    <tr><th>API endpoint</th><td><code class="conn-val copyable" role="button" tabindex="0" data-copy="{{ request.url_root }}api/v1" data-tip="Click to copy" aria-label="Copy API endpoint">{{ request.url_root }}api/v1</code></td></tr>
+    <tr><th>API key</th><td><code class="conn-val muted">{{ site.api_key_prefix }}…</code> <span class="muted small">(rotate to reveal a fresh one)</span></td></tr>
+    <tr><th>Site ID</th><td><code class="conn-val">{{ site.id }}</code></td></tr>
     <tr><th>Encryption key</th><td>
-      {% if site.e2ee_public_key %}<code>{{ site.e2ee_fingerprint }}</code> <span class="muted small">(public-key fingerprint — confirm this matches in TS&nbsp;Pro)</span>
+      {% if site.e2ee_public_key %}<code class="conn-val copyable" role="button" tabindex="0" data-copy="{{ site.e2ee_fingerprint }}" data-tip="Click to copy" aria-label="Copy encryption fingerprint">{{ site.e2ee_fingerprint }}</code> <span class="muted small">(public-key fingerprint — confirm this matches in TS&nbsp;Pro)</span>
       {% else %}<span class="muted small">none — rotate to generate one</span>{% endif %}
     </td></tr>
   </table>
@@ -120,5 +120,45 @@
   </form>
 </div>
 {% endif %}
+
+<script>
+(function(){
+  function copyText(text){
+    // navigator.clipboard only exists in a secure context (HTTPS or
+    // localhost); fall back to a hidden textarea over plain-HTTP LAN.
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.top = '-9999px';
+      document.body.appendChild(ta); ta.focus(); ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('copy command failed'));
+    });
+  }
+  document.querySelectorAll('.copyable[data-copy]').forEach(function(el){
+    var def = el.getAttribute('data-tip') || 'Click to copy';
+    var t;
+    function fire(){
+      copyText(el.getAttribute('data-copy')).then(function(){
+        el.setAttribute('data-tip', 'Copied!'); el.classList.add('copied');
+      }).catch(function(){
+        el.setAttribute('data-tip', 'Press Ctrl+C');
+      }).then(function(){
+        clearTimeout(t);
+        t = setTimeout(function(){ el.setAttribute('data-tip', def); el.classList.remove('copied'); }, 1500);
+      });
+    }
+    el.addEventListener('click', fire);
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
+    });
+  });
+})();
+</script>
 
 {% endblock %}
