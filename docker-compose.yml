@@ -7,9 +7,21 @@ services:
     container_name: tspro-backup
     ports:
       # Host port is configurable; the container always listens on 8000.
+      # SECURITY: with TSPB_TRUST_PROXY=1 (default) the app trusts the
+      # X-Forwarded-For header, which is only safe when a trusted reverse proxy
+      # is the SOLE ingress. If your proxy runs on this same host, bind to
+      # loopback so the container isn't reachable directly (a direct client
+      # could otherwise spoof XFF and defeat the per-IP login lockout):
+      #     - "127.0.0.1:${TSPB_PORT:-8095}:8000"
+      # If the proxy is on another host, keep the public bind below AND set
+      # TSPB_TRUST_PROXY=0 unless that proxy overwrites X-Forwarded-For.
       - "${TSPB_PORT:-8095}:8000"
     volumes:
       - ./data:/data
+    # Defence in depth: the entrypoint already drops to a non-root user; these
+    # stop a compromised process from regaining privileges.
+    security_opt:
+      - no-new-privileges:true
     environment:
       - TSPB_SECRET_KEY=${TSPB_SECRET_KEY:?TSPB_SECRET_KEY must be set in .env}
       - TSPB_ADMIN_USERNAME=${TSPB_ADMIN_USERNAME:-admin}
@@ -20,6 +32,9 @@ services:
       - TSPB_REST_PASSPHRASE=${TSPB_REST_PASSPHRASE:-}
       # Max single upload (MiB). Whole-site bundles can be large.
       - TSPB_MAX_UPLOAD_MB=${TSPB_MAX_UPLOAD_MB:-8192}
+      # Trust X-Forwarded-* from the proxy in front (client IP / scheme / host).
+      # 1 = behind a trusted proxy (default); 0 = use the real socket peer.
+      - TSPB_TRUST_PROXY=${TSPB_TRUST_PROXY:-1}
       # Local dev only: serve over plain HTTP (don't set Secure cookie flag).
       # Remove / set to 0 behind TLS in production.
       - TSPB_DEBUG=${TSPB_DEBUG:-0}

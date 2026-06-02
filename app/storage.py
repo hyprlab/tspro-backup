@@ -17,7 +17,7 @@ from datetime import datetime
 
 from flask import current_app
 
-from . import restenc
+from . import pubkey, restenc
 from .models import Backup, Setting, db
 
 
@@ -50,15 +50,18 @@ def ingest(site, scope, src_temp_path, original_name, note=None):
     app = current_app._get_current_object()
     settings = Setting.get()
 
-    # Hash + size + client-encryption sniff in one pass over the source.
+    # Detect the client-side envelope by STRUCTURE (not just an 8-byte magic):
+    # a well-formed TSPEPK01 public-key envelope, or a TSPENC01 passphrase one.
+    is_e2ee_envelope = pubkey.file_is_well_formed_envelope(src_temp_path)
+    client_encrypted = is_e2ee_envelope or restenc.file_is_well_formed(src_temp_path)
+    # Record which site key a TSPEPK01 upload targets, so a later rotation
+    # doesn't leave the operator guessing which private key restores it.
+    e2ee_fp = site.e2ee_fingerprint if (is_e2ee_envelope and site.e2ee_public_key) else None
+
+    # Hash + size in one pass over the source.
     h = hashlib.sha256()
     size = 0
-    client_encrypted = False
     with open(src_temp_path, "rb") as f:
-        first = f.read(8)
-        client_encrypted = restenc.head_is_encrypted(first)
-        h.update(first)
-        size += len(first)
         while True:
             chunk = f.read(1024 * 1024)
             if not chunk:
@@ -83,6 +86,12 @@ def ingest(site, scope, src_temp_path, original_name, note=None):
                 out.write(chunk)
 
     stored_bytes = os.path.getsize(dest)
+    # Stored blobs are (E2EE / at-rest) ciphertext, but keep them owner-only
+    # rather than world-readable so a non-root local user can't read the vault.
+    try:
+        os.chmod(dest, 0o600)
+    except OSError:
+        pass
 
     backup = Backup(
         site_id=site.id,
@@ -94,6 +103,7 @@ def ingest(site, scope, src_temp_path, original_name, note=None):
         sha256=h.hexdigest(),
         encrypted_at_rest=encrypt_at_rest,
         client_encrypted=client_encrypted,
+        e2ee_fingerprint=e2ee_fp,
         note=note,
         created_at=datetime.utcnow(),
     )

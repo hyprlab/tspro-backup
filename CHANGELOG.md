@@ -5,6 +5,76 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-06-02
+
+A security-hardening release. Following a full multi-agent security review,
+this adds brute-force protection to the console login and closes a range of
+authentication, encryption-integrity, and denial-of-service gaps. **Upgrades
+are safe and automatic**, with three one-time effects noted below.
+
+### Security
+
+- **Console login lockout.** Failed sign-ins are rate-limited with a
+  DB-backed sliding window — after `TSPB_LOGIN_MAX_FAILURES` (default 5)
+  failures for a username **or** client IP within `TSPB_LOGIN_WINDOW_MINUTES`
+  (default 15), further attempts are refused (HTTP 429) until the oldest
+  failures age out. Holds across workers and restarts.
+- **No more usable default signing key.** `TSPB_SECRET_KEY`, when unset, now
+  auto-generates and persists a random key to `data/session.key` instead of
+  falling back to a shipped constant — closing an admin-session-forgery path
+  for non-compose deployments.
+- **Forced password change.** An account still using the default `admin`
+  password is funnelled through a one-time change wizard on first sign-in
+  (covers both fresh and existing deployments).
+- **Username-enumeration timing fixed** (a dummy hash equalises the
+  missing-user path) and the **lockout now runs after Turnstile**, so a
+  challenge can't be skipped to spray a known username.
+- **Password change invalidates other sessions** and remember-me cookies
+  (a per-account session epoch baked into the login token).
+- **End-to-end encryption gate hardened.** The upload gate now validates the
+  full `TSPEPK01` envelope **structure** (magic + 32-byte X25519 key + nonce
+  + tag) instead of an 8-byte magic prefix, and **rejects** uploads to an
+  E2EE-required site that has no encryption key. The per-backup recipient-key
+  fingerprint is recorded and shown. (The guarantee is now labelled honestly:
+  the server holds no private key, so it validates format, not ciphertext.)
+- **Upload denial-of-service caps.** Chunked uploads now enforce a per-chunk
+  cap, a `total_chunks` cap, a cumulative-size cap, and a free-disk check,
+  plus an optional per-site storage quota (`TSPB_SITE_QUOTA_MB`) — one site
+  key can no longer fill the disk. `total_chunks` is mandatory at finalize and
+  chunks must be contiguous, so a partial upload can't become a silently
+  truncated backup.
+- **Container runs as a non-root user**, with secure response headers
+  (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS),
+  hardened `remember-me` cookie flags, `0600` DB and blob permissions,
+  POST-only `/logout`, and the Werkzeug interactive debugger split onto its
+  own `TSPB_FLASK_DEBUG` flag (never via `TSPB_DEBUG`).
+- Bumped **Werkzeug to 3.0.6** (CVE-2024-49767, multipart-parser DoS) and
+  **requests to 2.32.4**.
+
+### Added
+
+- New env vars: `TSPB_TRUST_PROXY` (trust `X-Forwarded-*`; default `1`),
+  `TSPB_LOGIN_MAX_FAILURES`, `TSPB_LOGIN_WINDOW_MINUTES`, `TSPB_SITE_QUOTA_MB`,
+  `TSPB_FLASK_DEBUG`, `TSPB_CHUNK_TTL_HOURS`, `TSPB_DISK_MARGIN_MB`.
+- `/api/v1/ping` now advertises `max_backup_mb`.
+
+### Fixed
+
+- **Fresh-boot crash race.** Two workers booting against an empty database
+  could both seed the admin / settings singleton, crash-looping the service;
+  seeding is now race-safe.
+- `PRAGMA foreign_keys=ON` is enforced, so deleting a site cascades to its
+  backup rows (and on-disk blobs) instead of orphaning them.
+
+### Upgrade notes
+
+- All current console sessions are invalidated once (the session token format
+  changed) — operators simply sign in again.
+- Any admin still using the `admin` password is sent through the forced
+  change wizard on next sign-in.
+- A site that has E2EE required but no encryption key must have its keypair
+  rotated in the console before it can accept uploads again.
+
 ## [1.0.2] — 2026-06-02
 
 ### Changed
@@ -87,6 +157,7 @@ console to manage it all.
   mounted `/data` volume. Published as
   [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
 
+[1.1.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.1.0
 [1.0.2]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.2
 [1.0.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.1
 [1.0.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.0

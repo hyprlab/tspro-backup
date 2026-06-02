@@ -6,3 +6,6 @@ temp/
 .env
 *.db
 *.key
+
+# Internal security audit — documents still-open findings; don't publish it.
+SECURITY_AUDIT.md

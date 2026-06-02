@@ -9,7 +9,7 @@ from functools import wraps
 
 from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, send_file, session, url_for)
-from flask_login import current_user, login_required
+from flask_login import current_user, login_required, login_user
 
 from .crypto import encrypt
 from .models import (SCOPE_LABELS, SCOPES, AdminUser, Backup, Setting, Site, db)
@@ -286,7 +286,11 @@ def account():
     if new != confirm:
         return jsonify(ok=False, error="New passwords do not match"), 400
     current_user.set_password(new)
+    # Invalidate this account's other live sessions + remember-me cookies, then
+    # re-issue the current session so the user who just changed it stays in.
+    current_user.session_epoch = (current_user.session_epoch or 0) + 1
     db.session.commit()
+    login_user(current_user)
     return jsonify(ok=True, message="Password changed")
 
 

@@ -20,6 +20,7 @@ from datetime import datetime
 
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 db = SQLAlchemy()
@@ -45,12 +46,26 @@ class AdminUser(UserMixin, db.Model):
     role = db.Column(db.String(16), nullable=False, default="admin")
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login_at = db.Column(db.DateTime)
+    # Set when the account still uses the shipped default password; the console
+    # forces a change before anything else is reachable (see auth.force_password_change).
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False)
+    # Bumped on every password change. Baked into the Flask-Login session id
+    # (get_id) and checked in the user loader, so changing the password
+    # invalidates all other live sessions and remember-me cookies.
+    session_epoch = db.Column(db.Integer, nullable=False, default=0)
 
     def set_password(self, raw):
-        self.password_hash = generate_password_hash(raw)
+        # Pin the KDF explicitly so the work factor doesn't silently change
+        # with the installed Werkzeug version. scrypt is memory-hard.
+        self.password_hash = generate_password_hash(raw, method="scrypt")
 
     def check_password(self, raw):
         return check_password_hash(self.password_hash, raw)
+
+    def get_id(self):
+        # Flask-Login stores this in the session + remember cookie; the epoch
+        # suffix lets _load_user reject tokens issued before a password change.
+        return f"{self.id}-{self.session_epoch or 0}"
 
     def is_admin(self):
         return self.role == "admin"
@@ -58,6 +73,25 @@ class AdminUser(UserMixin, db.Model):
     @property
     def role_label(self):
         return "Admin" if self.is_admin() else "User"
+
+
+class LoginAttempt(db.Model):
+    """One *failed* console sign-in, used for rate-limiting / lockout.
+
+    The console has no external rate-limiter (no Redis), so we persist
+    failures in the DB: state then survives across the multiple gunicorn
+    workers and across restarts. One row per failed attempt, keyed by both
+    the (lower-cased) submitted username and the client IP so we can lock
+    on either axis. Rows older than the lockout window never count and are
+    pruned opportunistically (see ``app/loginguard.py``)."""
+    __tablename__ = "login_attempt"
+    id = db.Column(db.Integer, primary_key=True)
+    # The username string that was *submitted* (not necessarily a real
+    # account) — locking on the raw input means an attacker pounding a
+    # bogus name locks only that name, leaking nothing about who exists.
+    username = db.Column(db.String(80), index=True)
+    ip = db.Column(db.String(45), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
 
 class Setting(db.Model):
@@ -98,7 +132,12 @@ class Setting(db.Model):
         if row is None:
             row = cls(id=1)
             db.session.add(row)
-            db.session.commit()
+            try:
+                db.session.commit()
+            except IntegrityError:
+                # Concurrent first-boot worker already created the singleton.
+                db.session.rollback()
+                row = cls.query.get(1)
         return row
 
 
@@ -240,10 +279,15 @@ class Backup(db.Model):
     # True if WE wrapped it in the at-rest cipher (must be unwrapped on
     # download). Independent of ``client_encrypted``.
     encrypted_at_rest = db.Column(db.Boolean, nullable=False, default=False)
-    # True if the incoming archive was already encrypted by TS Pro
-    # (client-side). Informational — surfaced in the UI so operators know
-    # the contents are opaque even after at-rest decryption.
+    # True if the incoming archive is a well-formed client-side envelope
+    # (TSPEPK01 public-key, or TSPENC01 passphrase). This is a STRUCTURAL
+    # signal, not cryptographic proof — the UI labels it accordingly.
     client_encrypted = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Fingerprint of the site public key the backup was encrypted to (when it
+    # is a TSPEPK01 envelope), captured at ingest. Lets an operator who has
+    # rotated keypairs tell which saved private key restores this archive.
+    e2ee_fingerprint = db.Column(db.String(40))
 
     note = db.Column(db.String(500))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)

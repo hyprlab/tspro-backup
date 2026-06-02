@@ -13,11 +13,15 @@ patches columns onto existing tables at boot, ``db.create_all`` handles
 fresh installs.
 """
 import os
+import sqlite3
 from datetime import datetime
 
 from flask import Flask
 from flask_login import LoginManager
 from flask_wtf import CSRFProtect
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .crypto import init_fernet
@@ -30,6 +34,17 @@ login_manager.login_message = None
 csrf = CSRFProtect()
 
 
+@event.listens_for(Engine, "connect")
+def _sqlite_fk_pragma(dbapi_connection, connection_record):
+    # SQLite defaults foreign_keys=OFF per connection, which makes our
+    # ondelete=CASCADE inert — a Site delete would leave orphaned Backup rows
+    # (and their on-disk blobs) behind. Enforce it on every sqlite connection.
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        cur = dbapi_connection.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
+
+
 def create_app():
     app = Flask(__name__)
 
@@ -38,25 +53,46 @@ def create_app():
     db_path = os.path.join(data_dir, "tspro_backup.db")
 
     max_mb = int(os.environ.get("TSPB_MAX_UPLOAD_MB", "8192"))
+    # Plain-HTTP dev disables the Secure cookie flag. Used for both the
+    # session and the (equally sensitive) Flask-Login remember cookie.
+    secure_cookies = os.environ.get("TSPB_DEBUG", "").lower() not in ("1", "true", "yes")
 
     app.config.update(
-        SECRET_KEY=os.environ.get("TSPB_SECRET_KEY", "dev-insecure-change-me"),
+        SECRET_KEY=_resolve_secret_key(data_dir),
         SQLALCHEMY_DATABASE_URI=f"sqlite:///{db_path}",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         DATA_DIR=data_dir,
         DB_PATH=db_path,
         VERSION=__version__,
         MAX_CONTENT_LENGTH=max_mb * 1024 * 1024,
+        # Failed-console-login lockout (see app/loginguard.py): after
+        # LOGIN_MAX_FAILURES failures for a username or IP within
+        # LOGIN_WINDOW_MINUTES, further sign-ins are refused until the
+        # oldest failures age out. 0 failures disables the lockout.
+        LOGIN_MAX_FAILURES=int(os.environ.get("TSPB_LOGIN_MAX_FAILURES", "5")),
+        LOGIN_WINDOW_MINUTES=int(os.environ.get("TSPB_LOGIN_WINDOW_MINUTES", "15")),
         # Secure cookie unless explicitly running over plain HTTP for dev.
-        SESSION_COOKIE_SECURE=os.environ.get("TSPB_DEBUG", "").lower()
-        not in ("1", "true", "yes"),
+        SESSION_COOKIE_SECURE=secure_cookies,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
+        # The persistent "remember me" cookie is an auth credential too —
+        # give it the same protections as the session cookie (Flask-Login
+        # otherwise defaults it to Secure=False, SameSite=None).
+        REMEMBER_COOKIE_SECURE=secure_cookies,
+        REMEMBER_COOKIE_HTTPONLY=True,
+        REMEMBER_COOKIE_SAMESITE="Lax",
     )
 
     # Behind Caddy / Cloudflare: trust one proxy hop for scheme + client IP
     # so Turnstile sees the real remote address and url_for builds https.
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    # SECURITY: ProxyFix makes request.remote_addr follow the client-supplied
+    # X-Forwarded-For header, which the login lockout keys on. That is only
+    # safe when a TRUSTED proxy (that overwrites XFF) is the sole ingress. If
+    # the listening port is reachable directly, an attacker spoofs XFF to
+    # defeat the per-IP lockout — so gate it behind an explicit opt-in.
+    # Default on preserves the documented behind-a-proxy deployment.
+    if os.environ.get("TSPB_TRUST_PROXY", "1").lower() in ("1", "true", "yes"):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     db.init_app(app)
     init_fernet(app)
@@ -74,19 +110,86 @@ def create_app():
     csrf.exempt(api_bp)
 
     _register_jinja(app)
+    _register_security_headers(app, secure_cookies)
+    _register_password_gate(app)
 
     with app.app_context():
         db.create_all()
         _migrate_sqlite(db)
         Setting.get()  # ensure singleton exists
         _seed_admin(app)
+        _flag_default_passwords(app)
+
+    # The DB holds API-key hashes, settings and the encrypted Turnstile secret;
+    # don't leave it world-readable next to the other 0600 secrets in DATA_DIR.
+    try:
+        os.chmod(db_path, 0o600)
+    except OSError:
+        pass
+
+    # Reap abandoned chunk-upload staging dirs on a timer, independent of traffic.
+    from .api import start_chunk_reaper
+    start_chunk_reaper(app)
 
     return app
 
 
 @login_manager.user_loader
 def _load_user(user_id):
-    return AdminUser.query.get(int(user_id))
+    # IDs are "<pk>-<session_epoch>" (see AdminUser.get_id). A token whose epoch
+    # no longer matches the row was issued before a password change → reject it.
+    uid, _, epoch = str(user_id).partition("-")
+    try:
+        user = AdminUser.query.get(int(uid))
+    except (TypeError, ValueError):
+        return None
+    if user is None or epoch != str(user.session_epoch or 0):
+        return None
+    return user
+
+
+def _resolve_secret_key(data_dir):
+    """The Flask session/CSRF signing key.
+
+    Prefer ``TSPB_SECRET_KEY``. If it is unset we must NOT fall back to a
+    shipped constant — a known signing key lets anyone forge an admin
+    session cookie and walk straight past the login form (and its lockout).
+    Instead generate a random key once and persist it under the data dir,
+    mirroring the existing rest.key / secret.key pattern, so it survives
+    restarts while never being a value an attacker could know."""
+    key = os.environ.get("TSPB_SECRET_KEY")
+    if key:
+        return key
+    path = os.path.join(data_dir, "session.key")
+    if os.path.exists(path):
+        with open(path) as f:
+            stored = f.read().strip()
+        if stored:
+            return stored
+    import secrets
+    key = secrets.token_urlsafe(48)
+    with open(path, "w") as f:
+        f.write(key)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _register_security_headers(app, secure):
+    """Conservative response hardening for the console. (CSP is intentionally
+    omitted here — the login page loads Cloudflare Turnstile + inline style
+    vars; a CSP needs those allowances and is tracked as a follow-up.)"""
+    @app.after_request
+    def _headers(resp):
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        if secure:  # only assert HSTS when we're actually serving over TLS
+            resp.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return resp
 
 
 def _seed_admin(app):
@@ -97,8 +200,51 @@ def _seed_admin(app):
     u = AdminUser(username=username, role="admin")
     u.set_password(password)
     db.session.add(u)
-    db.session.commit()
-    app.logger.info("Seeded initial admin user %r", username)
+    try:
+        db.session.commit()
+        app.logger.info("Seeded initial admin user %r", username)
+    except IntegrityError:
+        # Two gunicorn workers can boot against a fresh DB at once and both try
+        # to seed — the loser hits a UNIQUE violation. Benign: the admin exists.
+        db.session.rollback()
+
+
+def _flag_default_passwords(app):
+    """Force a password change for any account still using the shipped default
+    password ('admin'). Covers both a freshly seeded admin/admin and an
+    existing deployment that was never rotated."""
+    try:
+        changed = False
+        for u in AdminUser.query.all():
+            if not u.must_change_password and u.check_password("admin"):
+                u.must_change_password = True
+                changed = True
+                app.logger.warning(
+                    "account %r still uses the default password — forcing a "
+                    "change on next sign-in", u.username)
+        if changed:
+            db.session.commit()
+    except Exception:  # noqa: BLE001 — never block boot on this hygiene check
+        db.session.rollback()
+
+
+def _register_password_gate(app):
+    """While a signed-in operator must_change_password, funnel every request to
+    the change-password wizard (except the wizard itself, logout, and static)."""
+    from flask import redirect, request, url_for
+    from flask_login import current_user
+
+    _allowed = {"auth.force_password_change", "auth.logout", "static"}
+
+    @app.before_request
+    def _force_password_change():
+        if not current_user.is_authenticated:
+            return None
+        if not getattr(current_user, "must_change_password", False):
+            return None
+        if request.endpoint in _allowed:
+            return None
+        return redirect(url_for("auth.force_password_change"))
 
 
 def _migrate_sqlite(db):
@@ -135,6 +281,8 @@ def _migrate_sqlite(db):
             add("setting", "keep_yearly", "keep_yearly INTEGER DEFAULT 3")
         if "admin_user" in existing:
             add("admin_user", "role", "role VARCHAR(16) DEFAULT 'admin'")
+            add("admin_user", "must_change_password", "must_change_password BOOLEAN DEFAULT 0")
+            add("admin_user", "session_epoch", "session_epoch INTEGER DEFAULT 0")
         if "site" in existing:
             add("site", "require_e2ee", "require_e2ee BOOLEAN")
             add("site", "encrypt_at_rest", "encrypt_at_rest BOOLEAN")
@@ -144,6 +292,7 @@ def _migrate_sqlite(db):
         if "backup" in existing:
             add("backup", "client_encrypted", "client_encrypted BOOLEAN DEFAULT 0")
             add("backup", "note", "note VARCHAR(500)")
+            add("backup", "e2ee_fingerprint", "e2ee_fingerprint VARCHAR(40)")
         db.session.commit()
     except Exception as e:  # noqa: BLE001 — never let a migration crash boot
         db.session.rollback()

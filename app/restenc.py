@@ -87,6 +87,19 @@ def is_encrypted(path: str) -> bool:
     return head == MAGIC
 
 
+def file_is_well_formed(path: str) -> bool:
+    """Structural check that ``path`` is a TSPENC01 (passphrase/at-rest)
+    envelope: correct magic and room for salt + nonce + tag. Like the public-
+    key check, this is a shape test, not cryptographic proof of ciphertext."""
+    try:
+        if os.path.getsize(path) < len(MAGIC) + _SALT_LEN + _NONCE_LEN + _TAG_LEN:
+            return False
+        with open(path, "rb") as f:
+            return f.read(len(MAGIC)) == MAGIC
+    except OSError:
+        return False
+
+
 def head_is_encrypted(blob: bytes) -> bool:
     """True iff an in-memory prefix looks like ciphertext we can't read —
     used to detect whether an *incoming* archive was already client-side

@@ -140,6 +140,32 @@ def head_is_e2ee(blob: bytes) -> bool:
     return blob[:len(MAGIC)] == MAGIC
 
 
+def file_is_well_formed_envelope(path: str) -> bool:
+    """Best-effort STRUCTURAL check that ``path`` is a TSPEPK01 envelope:
+    correct magic, a 32-byte ephemeral X25519 key, a 12-byte nonce, and room
+    for at least the GCM tag.
+
+    IMPORTANT: this is *not* proof the body is genuine ciphertext. The server
+    holds no private key, so it cannot verify the GCM tag — a caller with a
+    valid site API key could still craft a structurally-valid blob around
+    plaintext. It only rejects uploads that aren't even shaped like an
+    envelope, raising the bar from an 8-byte magic prefix to the full header.
+    """
+    try:
+        if os.path.getsize(path) < len(MAGIC) + _EPK_LEN + _NONCE_LEN + _TAG_LEN:
+            return False
+        with open(path, "rb") as f:
+            magic = f.read(len(MAGIC))
+            eph = f.read(_EPK_LEN)
+            nonce = f.read(_NONCE_LEN)
+        if magic != MAGIC or len(eph) != _EPK_LEN or len(nonce) != _NONCE_LEN:
+            return False
+        X25519PublicKey.from_public_bytes(eph)  # length/format sanity
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # ── derive the symmetric key from a shared secret ──────────────────────
 def _derive_key(shared: bytes, eph_pub: bytes, recip_pub: bytes) -> bytes:
     hkdf = HKDF(
