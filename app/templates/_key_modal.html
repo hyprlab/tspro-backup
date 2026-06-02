@@ -12,12 +12,28 @@
     </h2>
     <p class="muted modal-sub">Copy {{ 'these' if new_key and new_privkey else 'this' }} now — shown only once. Paste into the matching TS&nbsp;Pro backup target.</p>
 
+    <div class="key-label">{{ icon('link') }} API endpoint</div>
+    <div class="key-box"><code id="new-endpoint">{{ request.url_root }}api/v1</code></div>
+    <p class="muted small" style="margin:.4rem 0 0">Point the TS&nbsp;Pro backup target here.</p>
+    <div class="modal-actions" style="margin-bottom:1rem">
+      <button type="button" class="btn btn-ghost" data-copy-target="new-endpoint">{{ icon('copy') }} Copy endpoint</button>
+    </div>
+
     {% if new_key %}
     <div class="key-label">{{ icon('key') }} API key</div>
     <div class="key-box"><code id="new-key">{{ new_key }}</code></div>
     <p class="muted small" style="margin:.4rem 0 0">Authenticates uploads — stored here only as a hash.</p>
     <div class="modal-actions" style="margin-bottom:1rem">
       <button type="button" class="btn btn-ghost" data-copy-target="new-key">{{ icon('copy') }} Copy API key</button>
+    </div>
+    {% endif %}
+
+    {% if new_fingerprint %}
+    <div class="key-label">{{ icon('shield') }} Encryption key fingerprint</div>
+    <div class="key-box"><code id="new-fingerprint">{{ new_fingerprint }}</code></div>
+    <p class="muted small" style="margin:.4rem 0 0">Confirm this matches the public-key fingerprint shown in TS&nbsp;Pro.</p>
+    <div class="modal-actions" style="margin-bottom:1rem">
+      <button type="button" class="btn btn-ghost" data-copy-target="new-fingerprint">{{ icon('copy') }} Copy fingerprint</button>
     </div>
     {% endif %}
 

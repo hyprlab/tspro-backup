@@ -5,6 +5,28 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-06-02
+
+### Added
+
+- **API endpoint in the credentials modal.** The one-time site-credentials
+  reveal now shows the API endpoint (`…/api/v1`) with its own copy button,
+  alongside the API key and private key — no need to hunt for it separately.
+- **Encryption key fingerprint in the credentials modal.** The site's
+  public-key fingerprint is shown and copyable in the same modal, so you can
+  confirm it against TS Pro right after creating or rotating a keypair.
+
+### Changed
+
+- **Click-to-copy connection details.** On the site edit page, the API
+  endpoint and encryption key fingerprint are now click-to-copy, with a
+  hover tooltip that flips to **“Copied!”** on success.
+- **More prominent connection details.** Connection-detail values on the
+  site edit page are presented in boxed, higher-contrast chips instead of
+  plain inline text.
+- Tidied the site-credentials modal: each field's description now sits on
+  its own line under the key box, so the “API key” label no longer wraps.
+
 ## [1.0.0] — 2026-06-01
 
 First public release. An off-site, zero-knowledge backup server for
@@ -53,4 +75,5 @@ console to manage it all.
   mounted `/data` volume. Published as
   [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
 
+[1.0.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.1
 [1.0.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.0
