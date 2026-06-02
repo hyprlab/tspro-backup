@@ -4,7 +4,7 @@
 
 <h1 align="center">TS Pro Backup</h1>
 
-<p align="center">Off-site, encrypted backup storage for <a href="https://github.com/viibeware">Trusted Servants Pro</a>.</p>
+<p align="center">Off-site, encrypted backup storage for Trusted Servants Pro.</p>
 
 <p align="center">
   <a href="https://hub.docker.com/r/viibeware/tspro-backup"><img alt="Docker Image" src="https://img.shields.io/docker/v/viibeware/tspro-backup?label=docker&sort=semver"></a>
@@ -94,8 +94,33 @@ services:
 cp .env.example .env
 ```
 
-Edit `.env` and, at minimum, set a strong session secret and change the
-admin password:
+The full sample `.env` looks like this:
+
+```ini
+# Copy to .env and fill in. Generate a strong secret:
+#   python -c "import secrets; print(secrets.token_urlsafe(48))"
+TSPB_SECRET_KEY=change-me-to-a-long-random-string
+
+# Seed admin (used only on first boot, when the DB is empty).
+TSPB_ADMIN_USERNAME=admin
+TSPB_ADMIN_PASSWORD=admin
+
+# Host port to expose the console on (the container always listens on
+# 8000 internally).
+TSPB_PORT=8095
+
+# Optional at-rest encryption passphrase. If set, reproducible across
+# rebuilds; if blank, a random key is generated in ./data/rest.key.
+TSPB_REST_PASSPHRASE=
+
+# Max single upload in MiB (whole-site bundles can be large).
+TSPB_MAX_UPLOAD_MB=8192
+
+# Set to 1 only for local HTTP dev (disables Secure cookie flag).
+TSPB_DEBUG=0
+```
+
+At minimum, set a strong session secret and change the admin password:
 
 ```bash
 # Generate a strong secret:
