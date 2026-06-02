@@ -266,7 +266,8 @@ def upload():
     note = (request.form.get("note") or "").strip() or None
     original_name = os.path.basename(f.filename)
 
-    tmp = tempfile.NamedTemporaryFile(prefix="tspb-up-", suffix=".bin", delete=False)
+    tmp = tempfile.NamedTemporaryFile(prefix="tspb-up-", suffix=".bin",
+                                      dir=storage.tmp_dir(current_app), delete=False)
     try:
         f.save(tmp.name)
         tmp.close()
@@ -401,7 +402,8 @@ def upload_finalize():
     if cap:
         return jsonify(ok=False, error=cap[0]), cap[1]
 
-    tmp = tempfile.NamedTemporaryFile(prefix="tspb-up-", suffix=".bin", delete=False)
+    tmp = tempfile.NamedTemporaryFile(prefix="tspb-up-", suffix=".bin",
+                                      dir=storage.tmp_dir(current_app), delete=False)
     try:
         with open(tmp.name, "wb") as out:
             for name in chunks:

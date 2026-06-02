@@ -41,10 +41,14 @@ never evicts your whole-site backups.
 - 🔒 **Hardened console login** — brute-force lockout (per username and IP),
   a forced first-login password change (no standing `admin/admin`), and
   session invalidation on password change.
+- 👥 **Admin / user roles** — `admin` accounts have full access; `user`
+  accounts manage sites and backups but can't rotate keys, delete sites, or
+  change a site's encryption policy.
 - 🔐 **Cloudflare Turnstile** on the console login (optional).
 - 🛡️ **Hardened by default** — non-root container, secure response headers
-  (HSTS, `X-Frame-Options`, …), `0600` data files, server-enforced upload
-  size/quota caps, and an envelope-structure check on every E2EE upload.
+  (CSP, HSTS, `X-Frame-Options`, …), `0600` data files, server-enforced
+  upload size/quota caps, and an envelope-structure check on every E2EE
+  upload.
 - 🧱 **Encrypted at rest** — streaming AES-256-GCM, server-wide or
   per-site. Defense-in-depth for the storage volume with a key the
   *server* holds, so it is **not** end-to-end; independent of the E2EE

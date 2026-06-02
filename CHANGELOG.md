@@ -5,6 +5,37 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-06-02
+
+A follow-up hardening release that completes the privilege-separation work
+and adds defence-in-depth from the security review. **Upgrades are safe and
+automatic.**
+
+### Security
+
+- **Limited `user` role enforced.** Non-admin (`user`) operators can no longer
+  rotate a site's API key or encryption keypair, delete a site, or change a
+  site's encryption policy (`require_e2ee` / `encrypt_at_rest`) — those are now
+  admin-only, enforced server-side and hidden in the UI. `user` accounts keep
+  "manage sites & backups" (create/edit a site's name + retention, browse and
+  delete backups).
+- **Content-Security-Policy** added to console responses (alongside the
+  existing `X-Frame-Options` / `X-Content-Type-Options` / `Referrer-Policy` /
+  HSTS): restricts scripts to same-origin + Cloudflare Turnstile, forbids
+  framing, off-site form posts, and base-tag hijacking.
+- **Transient files kept on the data volume.** Upload staging and at-rest
+  decrypt temp files now live under `<DATA_DIR>/tmp` (mode `0700`) instead of
+  the shared system `/tmp`, so any transient plaintext stays on the controlled,
+  owner-only volume and disk accounting is honest.
+- The development-server `Server` banner no longer leaks the Werkzeug/Python
+  version.
+
+### Changed
+
+- **Threaded workers.** gunicorn now uses the `gthread` worker class
+  (`-w 2 --threads 4`), so a couple of slow multi-GB transfers can't tie up
+  every worker and stall the console.
+
 ## [1.1.0] — 2026-06-02
 
 A security-hardening release. Following a full multi-agent security review,
@@ -157,6 +188,7 @@ console to manage it all.
   mounted `/data` volume. Published as
   [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
 
+[1.2.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.1.0
 [1.0.2]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.2
 [1.0.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.1
