@@ -5,6 +5,19 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-06-02
+
+### Fixed
+
+- **Console login broke with `400 Bad Request: The referrer header is missing.`
+  over HTTPS.** The `Referrer-Policy: no-referrer` header introduced in 1.1.0
+  made browsers omit the `Referer` header, which Flask-WTF's strict CSRF
+  referrer check (`WTF_CSRF_SSL_STRICT`, on over HTTPS) requires — so every
+  console form POST, including sign-in, was rejected on a TLS deployment.
+  Changed the policy to `same-origin`, which keeps the `Referer` on
+  same-origin requests (still withholding it from external sites). **Anyone
+  running 1.1.0 or 1.2.0 behind TLS should upgrade to 1.2.1.**
+
 ## [1.2.0] — 2026-06-02
 
 A follow-up hardening release that completes the privilege-separation work
@@ -188,6 +201,7 @@ console to manage it all.
   mounted `/data` volume. Published as
   [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
 
+[1.2.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.1
 [1.2.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.1.0
 [1.0.2]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.2
