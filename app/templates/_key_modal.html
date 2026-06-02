@@ -4,14 +4,17 @@
    Closing removes it from the DOM. Neither secret is recoverable later. #}
 {% if new_key or new_privkey %}
 <div class="modal-overlay" id="key-modal" role="dialog" aria-modal="true" aria-labelledby="key-modal-title">
-  <div class="modal-card">
+  <div class="modal-card key-modal-card">
     <button type="button" class="modal-close" data-key-modal-close aria-label="Close">{{ icon('x') }}</button>
-    <span class="modal-icon">{{ icon('key') }}</span>
-    <h2 id="key-modal-title" class="modal-title">
-      {% if new_key and new_privkey %}Site credentials{% elif new_key %}New API key{% else %}New encryption key{% endif %}
-    </h2>
-    <p class="muted modal-sub">Copy {{ 'these' if new_key and new_privkey else 'this' }} now — shown only once. Paste into the matching TS&nbsp;Pro backup target.</p>
+    <div class="modal-head">
+      <span class="modal-icon">{{ icon('key') }}</span>
+      <h2 id="key-modal-title" class="modal-title">
+        {% if new_key and new_privkey %}Site credentials{% elif new_key %}New API key{% else %}New encryption key{% endif %}
+      </h2>
+      <p class="muted modal-sub">Copy {{ 'these' if new_key and new_privkey else 'this' }} now — shown only once. Paste into the matching TS&nbsp;Pro backup target.</p>
+    </div>
 
+    <div class="modal-body">
     <div class="key-label">{{ icon('link') }} API endpoint</div>
     <div class="key-box"><code id="new-endpoint">{{ request.url_root }}api/v1</code></div>
     <p class="muted small" style="margin:.4rem 0 0">Point the TS&nbsp;Pro backup target here.</p>
@@ -46,9 +49,12 @@
       <button type="button" class="btn btn-ghost" data-copy-target="new-privkey">{{ icon('copy') }} Copy private key</button>
     </div>
     {% endif %}
+    </div>
 
-    <div class="modal-actions">
-      <button type="button" class="btn btn-primary" data-key-modal-close>Done</button>
+    <div class="modal-foot">
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" data-key-modal-close>Done</button>
+      </div>
     </div>
   </div>
 </div>
