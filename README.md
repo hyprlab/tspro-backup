@@ -38,7 +38,13 @@ never evicts your whole-site backups.
   creation, never stored here) can decrypt it. The server holds only
   ciphertext, so it can't read your backups even if fully compromised,
   and the API rejects any upload that isn't already encrypted.
+- 🔒 **Hardened console login** — brute-force lockout (per username and IP),
+  a forced first-login password change (no standing `admin/admin`), and
+  session invalidation on password change.
 - 🔐 **Cloudflare Turnstile** on the console login (optional).
+- 🛡️ **Hardened by default** — non-root container, secure response headers
+  (HSTS, `X-Frame-Options`, …), `0600` data files, server-enforced upload
+  size/quota caps, and an envelope-structure check on every E2EE upload.
 - 🧱 **Encrypted at rest** — streaming AES-256-GCM, server-wide or
   per-site. Defense-in-depth for the storage volume with a key the
   *server* holds, so it is **not** end-to-end; independent of the E2EE
@@ -116,8 +122,20 @@ TSPB_REST_PASSPHRASE=
 # Max single upload in MiB (whole-site bundles can be large).
 TSPB_MAX_UPLOAD_MB=8192
 
+# Console sign-in lockout. After this many failed attempts for one username
+# OR one client IP within the window (minutes), sign-ins are refused until
+# the oldest failures age out. Set FAILURES to 0 to disable.
+TSPB_LOGIN_MAX_FAILURES=5
+TSPB_LOGIN_WINDOW_MINUTES=15
+
 # Set to 1 only for local HTTP dev (disables Secure cookie flag).
 TSPB_DEBUG=0
+
+# Trust X-Forwarded-* from the proxy in front. Leave at 1 ONLY when a trusted
+# reverse proxy is the sole ingress and overwrites X-Forwarded-For. If the
+# container port is reachable directly, set to 0 (uses the real socket peer)
+# so the login lockout can't be defeated by a spoofed X-Forwarded-For.
+TSPB_TRUST_PROXY=1
 ```
 
 At minimum, set a strong session secret and change the admin password:
@@ -151,6 +169,9 @@ docker compose ps
 
 ### 4. First-run setup in the console
 
+0. **Sign in** with the seed credentials. If the admin password is still the
+   default `admin`, the console walks you through a one-time password change
+   before anything else is reachable.
 1. **Settings** → end-to-end encryption is required by default; optionally
    enable Turnstile, encryption at rest, and set the default retention.
 2. **Sites → Add site** → name it. Copy the **API key** *and* the
@@ -174,6 +195,12 @@ the proxy's max request body size is large enough for your whole-site
 bundles (or rely on the chunked upload endpoints). Leave `TSPB_DEBUG=0`
 behind TLS; set it to `1` **only** for local plain-HTTP development.
 
+The app trusts `X-Forwarded-*` from the proxy by default (`TSPB_TRUST_PROXY=1`),
+which is correct when a trusted proxy is the **only** way in. If the container
+port is also reachable directly, either bind it to loopback
+(`127.0.0.1:8095:8000`) or set `TSPB_TRUST_PROXY=0`, so a spoofed
+`X-Forwarded-For` can't defeat the per-IP login lockout.
+
 ### Upgrading
 
 ```bash
@@ -184,6 +211,11 @@ docker compose up -d         # recreate the container
 Your data lives in the `./data` volume and is preserved across upgrades.
 Schema changes are applied automatically at boot (additive SQLite
 migrations), so no manual migration step is needed.
+
+> **Upgrading to 1.1.0** has three one-time effects: existing console
+> sessions are invalidated (sign in again); an admin still on the `admin`
+> password is sent through a forced change wizard; and a site with E2EE
+> required but no key must have its keypair rotated before it can upload.
 
 ### Build from source instead
 
@@ -209,10 +241,15 @@ Serves on <http://localhost:8000> with plain-HTTP dev cookies.
 | `TSPB_PORT` | `8095` | Host port for the console (compose only). |
 | `TSPB_FERNET_KEY` | auto (`data/secret.key`) | Seed for encrypting the Turnstile secret. |
 | `TSPB_REST_PASSPHRASE` | auto (`data/rest.key`) | At-rest encryption passphrase. |
-| `TSPB_ADMIN_USERNAME` / `TSPB_ADMIN_PASSWORD` | `admin` / `admin` | Seed admin (first boot only). |
+| `TSPB_ADMIN_USERNAME` / `TSPB_ADMIN_PASSWORD` | `admin` / `admin` | Seed admin (first boot only). Default password forces a change on first login. |
 | `TSPB_DATA_DIR` | `/data` | Where the DB + archives live. |
-| `TSPB_MAX_UPLOAD_MB` | `8192` | Max single upload size. |
+| `TSPB_MAX_UPLOAD_MB` | `8192` | Max backup size (single-shot or reassembled). |
+| `TSPB_SITE_QUOTA_MB` | `0` (off) | Optional per-site storage quota. |
+| `TSPB_TRUST_PROXY` | `1` | Trust `X-Forwarded-*`. Set `0` if the port is reachable without a trusted proxy. |
+| `TSPB_LOGIN_MAX_FAILURES` | `5` | Failed sign-ins (per username/IP) before lockout; `0` disables. |
+| `TSPB_LOGIN_WINDOW_MINUTES` | `15` | Sliding lockout window. |
 | `TSPB_DEBUG` | `0` | `1` = plain-HTTP dev cookies. |
+| `TSPB_FLASK_DEBUG` | `0` | `1` = Werkzeug debugger (loopback dev only). |
 
 > ⚠️ If you rely on at-rest encryption, **back up `TSPB_REST_PASSPHRASE`
 > (or `data/rest.key`)**. Losing it makes the stored archives

@@ -21,16 +21,20 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 from flask import (Blueprint, current_app, g, jsonify, request, send_file)
+from sqlalchemy import func
 
 from .models import (SCOPE_FULL, SCOPES, Backup, Setting, Site, db)
 from . import pubkey, restenc, storage
 
 bp = Blueprint("api", __name__, url_prefix="/api/v1")
+
+_MiB = 1024 * 1024
 
 # Chunked upload: clients behind a body-size-limited proxy (e.g.
 # Cloudflare's 100 MiB cap) slice the encrypted archive into parts, POST
@@ -38,7 +42,28 @@ bp = Blueprint("api", __name__, url_prefix="/api/v1")
 # ingest. We advertise this in /ping; small uploads still use the
 # single-shot /backups route.
 CHUNK_MAX_MB = int(os.environ.get("TSPB_CHUNK_MB", "90"))
+CHUNK_MAX_BYTES = CHUNK_MAX_MB * _MiB
+# Per-site storage quota (sum of stored bytes). 0 = unlimited.
+SITE_QUOTA_MB = int(os.environ.get("TSPB_SITE_QUOTA_MB", "0"))
+# Always keep this much free on the data volume as headroom.
+_DISK_MARGIN_BYTES = int(os.environ.get("TSPB_DISK_MARGIN_MB", "256")) * _MiB
+# Abandoned chunk staging dirs older than this are reaped (see _reaper).
+_CHUNK_TTL_SECONDS = int(os.environ.get("TSPB_CHUNK_TTL_HOURS", "6")) * 3600
+# Don't update a site's last_seen on every single request — debounce the
+# write so a high request rate doesn't hammer the shared SQLite file.
+_LAST_SEEN_DEBOUNCE = timedelta(seconds=60)
+
 _UPLOAD_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _max_backup_bytes():
+    # Logical cap on a stored backup, single-shot OR reassembled-from-chunks.
+    # Reuses the single-request ceiling so both paths share one limit.
+    return int(current_app.config.get("MAX_CONTENT_LENGTH") or (8192 * _MiB))
+
+
+def _max_total_chunks():
+    return max(1, (_max_backup_bytes() + CHUNK_MAX_BYTES - 1) // CHUNK_MAX_BYTES) + 4
 
 
 def _safe_upload_id(s):
@@ -54,15 +79,50 @@ def _chunk_staging_dir(site_id, upload_id):
     return root
 
 
-def _cleanup_stale_chunks(max_age_seconds=24 * 60 * 60):
-    """Drop abandoned chunk dirs (client died mid-upload) so they don't
-    pile up. Best-effort; never raises."""
-    cutoff = time.time() - max_age_seconds
-    base = os.path.join(current_app.config["DATA_DIR"], "upload-chunks")
+def _staged_bytes(staging):
+    """Total bytes already staged for one upload_id."""
+    total = 0
+    try:
+        for name in os.listdir(staging):
+            try:
+                total += os.path.getsize(os.path.join(staging, name))
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return total
+
+
+def _capacity_error(site, incoming_bytes):
+    """Return (message, status) if storing ``incoming_bytes`` more would breach
+    free-disk headroom or this site's quota, else None. Prevents one site key
+    from filling the volume."""
+    try:
+        free = shutil.disk_usage(current_app.config["DATA_DIR"]).free
+        if free < incoming_bytes + _DISK_MARGIN_BYTES:
+            return ("server is low on disk space; try again later", 507)
+    except OSError:
+        pass
+    if SITE_QUOTA_MB > 0:
+        used = db.session.query(
+            func.coalesce(func.sum(Backup.stored_bytes), 0)
+        ).filter(Backup.site_id == site.id).scalar() or 0
+        if used + incoming_bytes > SITE_QUOTA_MB * _MiB:
+            return (f"site storage quota of {SITE_QUOTA_MB} MiB exceeded", 413)
+    return None
+
+
+def _reap_stale_chunks(base, ttl_seconds):
+    """Drop abandoned chunk dirs (client died mid-upload). Best-effort."""
+    cutoff = time.time() - ttl_seconds
     try:
         for site_dir in os.listdir(base):
             sp = os.path.join(base, site_dir)
-            for name in os.listdir(sp):
+            try:
+                names = os.listdir(sp)
+            except OSError:
+                continue
+            for name in names:
                 d = os.path.join(sp, name)
                 try:
                     if os.path.getmtime(d) < cutoff:
@@ -73,26 +133,47 @@ def _cleanup_stale_chunks(max_age_seconds=24 * 60 * 60):
         pass
 
 
+def start_chunk_reaper(app):
+    """Background daemon that reaps abandoned chunk staging dirs on a timer —
+    independent of inbound traffic, so an idle service still cleans up (the old
+    code only swept when a *new* chunk arrived). Called once from create_app."""
+    base = os.path.join(app.config["DATA_DIR"], "upload-chunks")
+    interval = max(300, _CHUNK_TTL_SECONDS // 4)
+
+    def _loop():
+        while True:
+            time.sleep(interval)
+            _reap_stale_chunks(base, _CHUNK_TTL_SECONDS)
+
+    threading.Thread(target=_loop, name="tspb-chunk-reaper", daemon=True).start()
+
+
 def _e2ee_gate_error(site, path):
-    """Apply the end-to-end-encryption upload gate to the file at
-    ``path``. Returns a user-facing error string to reject with, or None
-    if the upload may proceed. Shared by single-shot + chunked uploads."""
+    """Apply the end-to-end-encryption upload gate to the file at ``path``.
+    Returns a user-facing error string to reject with, or None if the upload
+    may proceed. Shared by single-shot + chunked uploads.
+
+    NOTE: this validates the envelope *structure* (magic + key + nonce + tag
+    room), not that the body is genuine ciphertext — the server holds no
+    private key and cannot verify the GCM tag. It is a misconfiguration guard
+    that the client encrypted to the right format, not a cryptographic proof.
+    """
     if not site.effective_require_e2ee(Setting.get()):
         return None
-    with open(path, "rb") as fh:
-        head = fh.read(8)
     if site.e2ee_public_key:
-        if pubkey.head_is_e2ee(head):
+        if pubkey.file_is_well_formed_envelope(path):
             return None
         return ("end-to-end encryption is required: upload the archive encrypted "
-                "to this site's public key (TSPEPK01). Configure the TS Pro Backup "
-                "target with this site's key so the server only ever receives "
-                "ciphertext it cannot read.")
-    if restenc.head_is_encrypted(head):
-        return None
-    return ("end-to-end encryption is required: this archive was not encrypted "
-            "before upload. Enable archive encryption in the TS Pro backup "
-            "target so the server only ever receives ciphertext.")
+                "to this site's public key as a TSPEPK01 envelope. Configure the "
+                "TS Pro Backup target with this site's public key so the server "
+                "only ever receives ciphertext it has no key for.")
+    # E2EE is required but this site has no recipient key (a legacy site that
+    # predates keypairs). We must NOT silently accept a server-held at-rest
+    # envelope as if it were end-to-end — that key is held by the server. Refuse
+    # until the operator mints a keypair.
+    return ("end-to-end encryption is required but this site has no encryption "
+            "key yet. Rotate the site's keypair in the console, point the TS Pro "
+            "target at the new public key, then retry.")
 
 
 def _extract_key():
@@ -108,9 +189,14 @@ def require_site(fn):
         site = Site.authenticate(_extract_key())
         if site is None:
             return jsonify(ok=False, error="invalid or missing API key"), 401
-        site.last_seen_at = datetime.utcnow()
-        site.last_seen_ip = request.remote_addr
-        db.session.commit()
+        # Debounce last_seen so a burst of requests (e.g. many chunk POSTs)
+        # doesn't trigger a DB write per request on the shared SQLite file.
+        now = datetime.utcnow()
+        if site.last_seen_at is None or (now - site.last_seen_at) > _LAST_SEEN_DEBOUNCE \
+                or site.last_seen_ip != request.remote_addr:
+            site.last_seen_at = now
+            site.last_seen_ip = request.remote_addr
+            db.session.commit()
         g.site = site
         return fn(*args, **kwargs)
     return wrapper
@@ -126,6 +212,7 @@ def _backup_json(b: Backup):
         "sha256": b.sha256,
         "encrypted_at_rest": b.encrypted_at_rest,
         "client_encrypted": b.client_encrypted,
+        "e2ee_fingerprint": b.e2ee_fingerprint,
         "note": b.note,
         "created_at": b.created_at.isoformat() + "Z" if b.created_at else None,
     }
@@ -155,9 +242,12 @@ def ping():
         retention=site.retention(settings),
         # Chunked/resumable upload support, so clients behind a body-size-
         # limited proxy can split large archives. max_chunk_mb is the
-        # largest part the client should send per request.
+        # largest part the client should send per request (now enforced
+        # server-side, not just advised); max_backup_mb is the logical
+        # ceiling on a whole backup, single-shot or reassembled.
         chunked_upload=True,
         max_chunk_mb=CHUNK_MAX_MB,
+        max_backup_mb=_max_backup_bytes() // _MiB,
     )
 
 
@@ -180,6 +270,11 @@ def upload():
     try:
         f.save(tmp.name)
         tmp.close()
+
+        incoming = os.path.getsize(tmp.name)
+        cap = _capacity_error(site, incoming)
+        if cap:
+            return jsonify(ok=False, error=cap[0]), cap[1]
 
         # End-to-end encryption gate: refuse anything that isn't already
         # ciphertext we can't read (see _e2ee_gate_error).
@@ -218,13 +313,46 @@ def upload_chunk():
         return jsonify(ok=False, error="bad chunk metadata"), 400
     if chunk_index < 0 or total_chunks < 1 or chunk_index >= total_chunks:
         return jsonify(ok=False, error="chunk index out of range"), 400
+    if total_chunks > _max_total_chunks():
+        return jsonify(ok=False, error=(
+            f"too many chunks (max {_max_total_chunks()} for a "
+            f"{_max_backup_bytes() // _MiB} MiB backup)")), 400
     chunk = request.files.get("chunk")
     if chunk is None:
         return jsonify(ok=False, error="missing 'chunk' part"), 400
 
-    _cleanup_stale_chunks()
     staging = _chunk_staging_dir(g.site.id, upload_id)
-    chunk.save(os.path.join(staging, f"{chunk_index:08d}.bin"))
+    dest = os.path.join(staging, f"{chunk_index:08d}.bin")
+    # Replacing an existing index shouldn't double-count toward the cap.
+    prior = os.path.getsize(dest) if os.path.exists(dest) else 0
+    chunk.save(dest)
+    csize = os.path.getsize(dest)
+
+    # Per-chunk cap: a single chunk must not exceed the advertised max.
+    if csize > CHUNK_MAX_BYTES:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        return jsonify(ok=False, error=f"chunk exceeds max_chunk_mb ({CHUNK_MAX_MB} MiB)"), 413
+
+    # Cumulative cap: the staged total for this upload can't exceed the
+    # logical backup ceiling — stops an unbounded pile of chunks filling disk.
+    staged_total = _staged_bytes(staging)
+    if staged_total > _max_backup_bytes():
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        return jsonify(ok=False, error=(
+            f"upload exceeds the maximum backup size of "
+            f"{_max_backup_bytes() // _MiB} MiB")), 413
+
+    # Disk headroom: account for the eventual reassembled copy + this growth.
+    cap = _capacity_error(g.site, csize - prior)
+    if cap:
+        return jsonify(ok=False, error=cap[0]), cap[1]
+
     return jsonify(ok=True, upload_id=upload_id, chunk_index=chunk_index,
                    total_chunks=total_chunks)
 
@@ -251,13 +379,27 @@ def upload_finalize():
     if not os.path.isdir(staging):
         return jsonify(ok=False, error="upload session not found — re-upload the chunks"), 404
     chunks = sorted(n for n in os.listdir(staging) if n.endswith(".bin"))
+
+    # total_chunks is MANDATORY: without it the old code would happily assemble
+    # whatever partial set was present into a "successful" but truncated backup
+    # that can't be decrypted at restore. Require it and a contiguous 0..N-1 set.
     try:
-        expected = int(request.form.get("total_chunks", "0"))
+        expected = int(request.form.get("total_chunks", ""))
     except ValueError:
-        expected = 0
-    if expected and len(chunks) != expected:
-        return jsonify(ok=False, error=(f"upload incomplete — expected {expected} chunks "
-                                        f"but {len(chunks)} arrived; retry")), 409
+        return jsonify(ok=False, error="total_chunks is required"), 400
+    if expected < 1:
+        return jsonify(ok=False, error="total_chunks must be >= 1"), 400
+    want = [f"{i:08d}.bin" for i in range(expected)]
+    if chunks != want:
+        return jsonify(ok=False, error=(
+            f"upload incomplete or out of order — expected {expected} contiguous "
+            f"chunks but got {len(chunks)}; re-upload the missing parts")), 409
+
+    # Disk headroom for the reassembled copy before we write it.
+    reassembled = sum(os.path.getsize(os.path.join(staging, n)) for n in chunks)
+    cap = _capacity_error(site, reassembled)
+    if cap:
+        return jsonify(ok=False, error=cap[0]), cap[1]
 
     tmp = tempfile.NamedTemporaryFile(prefix="tspb-up-", suffix=".bin", delete=False)
     try:

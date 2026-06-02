@@ -33,7 +33,11 @@
         <button type="button" class="su-gear" data-open-settings title="Settings" aria-label="Settings">{{ icon('settings') }}</button>
       </div>
       {% endif %}
-      <a href="{{ url_for('auth.logout') }}" class="nav-link">{{ icon('logout') }}<span>Sign out</span></a>
+      <form action="{{ url_for('auth.logout') }}" method="post" class="logout-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="nav-link"
+                style="background:none;border:0;width:100%;cursor:pointer;font:inherit;text-align:left">{{ icon('logout') }}<span>Sign out</span></button>
+      </form>
       <div class="sidebar-ver">Ver. {{ app_version }}</div>
     </div>
   </aside>

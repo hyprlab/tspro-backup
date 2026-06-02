@@ -32,9 +32,9 @@
         <td><code class="muted small">{{ b.original_name }}</code></td>
         <td>{{ b.size_bytes | fmt_bytes }}</td>
         <td class="sec-cell">
-          {% if b.client_encrypted %}<span class="badge badge-lock" title="End-to-end encrypted by TS Pro before upload — this server has no key for it">{{ icon('shield') }} E2EE</span>{% endif %}
+          {% if b.client_encrypted %}<span class="badge badge-lock" title="Uploaded as a well-formed client-side encryption envelope{% if b.e2ee_fingerprint %} for key {{ b.e2ee_fingerprint }}{% endif %}. The server has no key for a TSPEPK01 envelope. (Format checked at upload; the server can't cryptographically verify the contents.)">{{ icon('shield') }} Encrypted{% if b.e2ee_fingerprint %} · {{ b.e2ee_fingerprint }}{% endif %}</span>{% endif %}
           {% if b.encrypted_at_rest %}<span class="badge badge-lock" title="Also wrapped with this server's at-rest key">{{ icon('lock') }} At rest</span>{% endif %}
-          {% if not b.client_encrypted %}<span class="badge badge-warn" title="Not end-to-end encrypted — uploaded as plaintext">{{ icon('alert') }} Not E2EE</span>{% endif %}
+          {% if not b.client_encrypted %}<span class="badge badge-warn" title="Not a recognized encryption envelope — treated as plaintext">{{ icon('alert') }} Not encrypted</span>{% endif %}
         </td>
         <td title="{{ b.created_at | fmt_dt }}">{{ b.created_at | ago }}</td>
         <td class="row-actions">

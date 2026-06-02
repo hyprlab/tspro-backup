@@ -7,15 +7,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY run.py .
+COPY docker-entrypoint.py /usr/local/bin/docker-entrypoint.py
 
 ENV FLASK_APP=run.py \
     PYTHONUNBUFFERED=1 \
     TSPB_DATA_DIR=/data
 
-RUN mkdir -p /data
+# Unprivileged runtime user. The container still *starts* as root so the
+# entrypoint can chown a root-owned bind-mounted /data, then it drops to this
+# user before exec'ing gunicorn (see docker-entrypoint.py).
+RUN useradd -u 10001 -r -m -s /usr/sbin/nologin app && mkdir -p /data && chown app:app /data
 
 EXPOSE 8000
 
-# 2 workers; long timeout so multi-GB whole-site bundle uploads / restores
-# in a single request aren't killed mid-stream.
+# Entrypoint drops privileges; CMD is the actual server. 2 workers; long
+# timeout so multi-GB whole-site bundle uploads / restores in a single
+# request aren't killed mid-stream.
+ENTRYPOINT ["python", "/usr/local/bin/docker-entrypoint.py"]
 CMD ["gunicorn", "-b", "0.0.0.0:8000", "-w", "2", "--timeout", "600", "--access-logfile", "-", "run:app"]
