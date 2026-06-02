@@ -132,9 +132,6 @@ TSPB_SECRET_KEY=<paste the generated secret>
 TSPB_ADMIN_PASSWORD=<a strong password>
 ```
 
-> The `.env` file holds secrets — it is **gitignored** and must never be
-> committed. Only `.env.example` is tracked.
-
 ### 3. Start it
 
 ```bash
