@@ -203,7 +203,11 @@ def _register_security_headers(app, secure):
     def _headers(resp):
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
-        resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        # MUST keep the same-origin Referer: Flask-WTF's CSRF protection does a
+        # strict referrer check over HTTPS (WTF_CSRF_SSL_STRICT) and rejects a
+        # POST whose Referer is missing. 'no-referrer' would strip it and break
+        # every console form. 'same-origin' still withholds it from other sites.
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("Content-Security-Policy", _CSP)
         # Neutralize the version-leaking dev-server banner (Werkzeug would
         # otherwise send "Werkzeug/x Python/y"). In production gunicorn sets
