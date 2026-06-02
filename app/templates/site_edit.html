@@ -53,12 +53,13 @@
     <legend>{{ icon('shield') }} End-to-end encryption</legend>
     <label class="field">
       <span>Require this site's uploads to be encrypted before they arrive</span>
-      <select name="require_e2ee">
+      <select name="require_e2ee" {{ 'disabled' if not current_user.is_admin() }}>
         {% set e2 = site.require_e2ee if site else none %}
         <option value="inherit" {{ 'selected' if e2 is none }}>Inherit server default ({{ 'Required' if settings.require_e2ee else 'Optional' }})</option>
         <option value="on" {{ 'selected' if e2 is true }}>Required — reject unencrypted uploads</option>
         <option value="off" {{ 'selected' if e2 is false }}>Optional — allow unencrypted uploads</option>
       </select>
+      {% if not current_user.is_admin() %}<span class="muted small">Only admins can change encryption policy.</span>{% endif %}
     </label>
   </fieldset>
 
@@ -66,12 +67,13 @@
     <legend>{{ icon('lock') }} Server-side encryption at rest</legend>
     <label class="field">
       <span>Also wrap this site's stored blobs with a server-held key (not end-to-end)</span>
-      <select name="encrypt_at_rest">
+      <select name="encrypt_at_rest" {{ 'disabled' if not current_user.is_admin() }}>
         {% set ev = site.encrypt_at_rest if site else none %}
         <option value="inherit" {{ 'selected' if ev is none }}>Inherit server default ({{ 'On' if settings.encrypt_at_rest else 'Off' }})</option>
         <option value="on" {{ 'selected' if ev is true }}>Always on</option>
         <option value="off" {{ 'selected' if ev is false }}>Always off</option>
       </select>
+      {% if not current_user.is_admin() %}<span class="muted small">Only admins can change encryption policy.</span>{% endif %}
     </label>
   </fieldset>
 
@@ -96,6 +98,7 @@
     </td></tr>
   </table>
   <p class="muted small">The client encrypts each backup to this site's public key; only the private key (shown once at creation) can decrypt it. This server never holds the private key.</p>
+  {% if current_user.is_admin() %}
   <div class="inline-form">
     <form method="post" action="{{ url_for('main.site_rotate_key', site_id=site.id) }}" class="inline-form"
           onsubmit="return confirm('Rotate the API key? The current key will stop working immediately.')">
@@ -108,8 +111,12 @@
       <button class="btn btn-ghost" type="submit">{{ icon('refresh') }} Rotate encryption keypair</button>
     </form>
   </div>
+  {% else %}
+  <p class="muted small">Rotating keys is an admin-only action.</p>
+  {% endif %}
 </div>
 
+{% if current_user.is_admin() %}
 <div class="card danger-zone">
   <div class="card-head"><h2>{{ icon('alert') }} Danger zone</h2></div>
   <p class="muted">Deleting this site permanently removes it and all {{ site.backups | length }} stored backup(s).</p>
@@ -119,6 +126,7 @@
     <button class="btn btn-danger" type="submit">{{ icon('trash') }} Delete site</button>
   </form>
 </div>
+{% endif %}
 {% endif %}
 
 <script>

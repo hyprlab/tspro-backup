@@ -20,8 +20,9 @@ RUN useradd -u 10001 -r -m -s /usr/sbin/nologin app && mkdir -p /data && chown a
 
 EXPOSE 8000
 
-# Entrypoint drops privileges; CMD is the actual server. 2 workers; long
-# timeout so multi-GB whole-site bundle uploads / restores in a single
-# request aren't killed mid-stream.
+# Entrypoint drops privileges; CMD is the actual server. Threaded workers
+# (gthread) so a couple of slow multi-GB transfers can't pin every worker and
+# stall the console — each worker handles several concurrent requests. Long
+# timeout so a single large upload/restore isn't killed mid-stream.
 ENTRYPOINT ["python", "/usr/local/bin/docker-entrypoint.py"]
-CMD ["gunicorn", "-b", "0.0.0.0:8000", "-w", "2", "--timeout", "600", "--access-logfile", "-", "run:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8000", "-w", "2", "-k", "gthread", "--threads", "4", "--timeout", "600", "--access-logfile", "-", "run:app"]

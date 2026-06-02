@@ -177,15 +177,39 @@ def _resolve_secret_key(data_dir):
     return key
 
 
+# Content-Security-Policy for the console. 'unsafe-inline' is required because
+# the templates use inline <script> blocks, inline on*= handlers and inline
+# style= attributes; the Cloudflare origin is whitelisted for the (optional)
+# Turnstile widget's script + iframe. Even with 'unsafe-inline' this still
+# blocks third-party script origins, framing (clickjacking), off-site form
+# posts and base-tag hijacking. Tightening to nonces is a future refactor.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "frame-src https://challenges.cloudflare.com; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
 def _register_security_headers(app, secure):
-    """Conservative response hardening for the console. (CSP is intentionally
-    omitted here — the login page loads Cloudflare Turnstile + inline style
-    vars; a CSP needs those allowances and is tracked as a follow-up.)"""
+    """Conservative response hardening for the console."""
     @app.after_request
     def _headers(resp):
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "no-referrer")
+        resp.headers.setdefault("Content-Security-Policy", _CSP)
+        # Neutralize the version-leaking dev-server banner (Werkzeug would
+        # otherwise send "Werkzeug/x Python/y"). In production gunicorn sets
+        # its own versionless "Server: gunicorn" at the WSGI layer and wins;
+        # stripping that entirely is a reverse-proxy concern.
+        resp.headers["Server"] = "tspro-backup"
         if secure:  # only assert HSTS when we're actually serving over TLS
             resp.headers.setdefault(
                 "Strict-Transport-Security", "max-age=31536000; includeSubDomains")

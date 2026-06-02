@@ -27,6 +27,19 @@ def _storage_root(app):
     return root
 
 
+def tmp_dir(app):
+    """A scratch dir for upload staging / at-rest decrypt temp files, kept on
+    the data volume (not shared /tmp) so disk accounting is honest and any
+    transient plaintext stays on the controlled, owner-only volume."""
+    d = os.path.join(app.config["DATA_DIR"], "tmp")
+    os.makedirs(d, exist_ok=True)
+    try:
+        os.chmod(d, 0o700)
+    except OSError:
+        pass
+    return d
+
+
 def site_dir(app, site_id):
     d = os.path.join(_storage_root(app), f"site-{site_id}")
     os.makedirs(d, exist_ok=True)
@@ -126,7 +139,8 @@ def open_for_download(app, backup: Backup):
         return path, False
     import tempfile
     passphrase = restenc.resolve_rest_passphrase(app)
-    tmp = tempfile.NamedTemporaryFile(prefix="tspb-dl-", suffix=".bin", delete=False)
+    tmp = tempfile.NamedTemporaryFile(prefix="tspb-dl-", suffix=".bin",
+                                      dir=tmp_dir(app), delete=False)
     tmp.close()
     restenc.decrypt_file(path, tmp.name, passphrase)
     return tmp.name, True

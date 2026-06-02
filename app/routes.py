@@ -30,6 +30,19 @@ def admin_required(fn):
     return wrapper
 
 
+def admin_required_page(fn):
+    """Like ``admin_required`` but for normal form-POST routes: a non-admin
+    gets a flash + redirect instead of raw JSON. Backstops the UI, which
+    already hides these controls from the limited 'user' role."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not getattr(current_user, "is_admin", lambda: False)():
+            flash("That action requires an admin account.", "danger")
+            return redirect(request.referrer or url_for("main.sites"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 def _int_or_none(val):
     val = (val or "").strip()
     if val == "":
@@ -139,14 +152,20 @@ def _apply_site_form(site):
     site.keep_weekly = _int_or_none(request.form.get("keep_weekly"))
     site.keep_monthly = _int_or_none(request.form.get("keep_monthly"))
     site.keep_yearly = _int_or_none(request.form.get("keep_yearly"))
-    enc = request.form.get("encrypt_at_rest", "inherit")
-    site.encrypt_at_rest = {"on": True, "off": False}.get(enc, None)
-    e2ee = request.form.get("require_e2ee", "inherit")
-    site.require_e2ee = {"on": True, "off": False}.get(e2ee, None)
+    # Encryption policy is a security control: only admins may set the per-site
+    # require_e2ee / encrypt_at_rest overrides. A non-admin's form submission
+    # leaves the existing values untouched, so they can't weaken (or strengthen)
+    # a site's encryption posture below the admin-controlled server default.
+    if current_user.is_admin():
+        enc = request.form.get("encrypt_at_rest", "inherit")
+        site.encrypt_at_rest = {"on": True, "off": False}.get(enc, None)
+        e2ee = request.form.get("require_e2ee", "inherit")
+        site.require_e2ee = {"on": True, "off": False}.get(e2ee, None)
 
 
 @bp.route("/sites/<int:site_id>/rotate-key", methods=["POST"])
 @login_required
+@admin_required_page
 def site_rotate_key(site_id):
     site = Site.query.get_or_404(site_id)
     raw_key = site.issue_api_key()
@@ -159,6 +178,7 @@ def site_rotate_key(site_id):
 
 @bp.route("/sites/<int:site_id>/rotate-keypair", methods=["POST"])
 @login_required
+@admin_required_page
 def site_rotate_keypair(site_id):
     site = Site.query.get_or_404(site_id)
     privkey = site.issue_keypair()
@@ -182,6 +202,7 @@ def site_ack_key(site_id):
 
 @bp.route("/sites/<int:site_id>/delete", methods=["POST"])
 @login_required
+@admin_required_page
 def site_delete(site_id):
     site = Site.query.get_or_404(site_id)
     app = current_app._get_current_object()
