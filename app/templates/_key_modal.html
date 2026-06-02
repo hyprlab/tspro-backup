@@ -13,16 +13,18 @@
     <p class="muted modal-sub">Copy {{ 'these' if new_key and new_privkey else 'this' }} now — shown only once. Paste into the matching TS&nbsp;Pro backup target.</p>
 
     {% if new_key %}
-    <div class="key-label">{{ icon('key') }} API key <span class="muted small">— authenticates uploads (stored here only as a hash)</span></div>
+    <div class="key-label">{{ icon('key') }} API key</div>
     <div class="key-box"><code id="new-key">{{ new_key }}</code></div>
+    <p class="muted small" style="margin:.4rem 0 0">Authenticates uploads — stored here only as a hash.</p>
     <div class="modal-actions" style="margin-bottom:1rem">
       <button type="button" class="btn btn-ghost" data-copy-target="new-key">{{ icon('copy') }} Copy API key</button>
     </div>
     {% endif %}
 
     {% if new_privkey %}
-    <div class="key-label">{{ icon('lock') }} Private key <span class="muted small">— decrypts backups at restore; this server never keeps it</span></div>
+    <div class="key-label">{{ icon('lock') }} Private key</div>
     <div class="key-box"><code id="new-privkey">{{ new_privkey }}</code></div>
+    <p class="muted small" style="margin:.4rem 0 0">Decrypts backups at restore; this server never keeps it.</p>
     <p class="muted small" style="margin:.4rem 0 0">⚠️ Store this somewhere safe (a password manager). If you lose it, every backup encrypted to this site becomes <strong>permanently unrecoverable</strong> — that is what makes the storage zero-knowledge.</p>
     <div class="modal-actions" style="margin-bottom:.5rem">
       <button type="button" class="btn btn-ghost" data-copy-target="new-privkey">{{ icon('copy') }} Copy private key</button>
