@@ -39,6 +39,10 @@
         <td title="{{ b.created_at | fmt_dt }}">{{ b.created_at | ago }}</td>
         <td class="row-actions">
           <a class="btn btn-ghost btn-sm" href="{{ url_for('main.backup_download', backup_id=b.id) }}">{{ icon('download') }}</a>
+          {% if b.scope == 'full' and b.site.restore_ready %}
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('main.backup_restore', backup_id=b.id) }}"
+             title="Push this backup back to the live site (remote restore)">{{ icon('refresh') }}</a>
+          {% endif %}
           <form method="post" action="{{ url_for('main.backup_delete', backup_id=b.id) }}" class="inline-form"
                 onsubmit="return confirm('Delete this backup permanently?')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

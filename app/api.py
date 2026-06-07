@@ -248,7 +248,49 @@ def ping():
         chunked_upload=True,
         max_chunk_mb=CHUNK_MAX_MB,
         max_backup_mb=_max_backup_bytes() // _MiB,
+        # This server can push a stored backup back to the site on operator
+        # request. Advertised so older clients (that don't register) are
+        # unaffected and newer ones know /register is available.
+        remote_restore=True,
     )
+
+
+@bp.route("/register", methods=["POST"])
+@require_site
+def register():
+    """A site publishes how to reach it for a remote restore.
+
+    The mirror image of ``/ping`` handing out the E2EE public key: here the
+    site tells us its public base URL and a shared restore token we present
+    when pushing a backup back. The token is the security boundary on the
+    site's destructive restore endpoint, so we keep only a Fernet-encrypted
+    copy. Idempotent — the site calls this on every backend ``open()`` /
+    "Test connection", so we just overwrite.
+    """
+    site = g.site
+    data = request.get_json(silent=True) or request.form
+    callback_url = (data.get("callback_url") or "").strip()
+    token = (data.get("restore_token") or "").strip()
+    enabled = str(data.get("restore_enabled", "")).strip().lower() in ("1", "true", "yes", "on")
+
+    if callback_url and not re.match(r"^https?://[^\s/]+", callback_url, re.I):
+        return jsonify(ok=False, error="callback_url must be an absolute http(s) URL"), 400
+
+    site.restore_enabled = enabled
+    if enabled:
+        if callback_url:
+            site.restore_callback_url = callback_url.rstrip("/")
+        if token:
+            site.set_restore_token(token)
+        site.restore_registered_at = datetime.utcnow()
+    else:
+        # Site turned remote restore off — forget how to reach it so a stale
+        # URL/token can never be used.
+        site.restore_callback_url = None
+        site.set_restore_token(None)
+        site.restore_registered_at = None
+    db.session.commit()
+    return jsonify(ok=True, restore_enabled=site.restore_enabled)
 
 
 @bp.route("/backups", methods=["POST"])

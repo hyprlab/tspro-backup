@@ -255,6 +255,54 @@ def backup_download(backup_id):
     return resp
 
 
+@bp.route("/backups/<int:backup_id>/restore", methods=["GET", "POST"])
+@login_required
+@admin_required_page
+def backup_restore(backup_id):
+    """Push a stored backup back into its live site (out-of-band recovery).
+
+    Destructive on the *site*: it overwrites the site's database, uploads and
+    keys. Admin-only, and gated by an explicit typed confirmation plus the
+    operator's private key (which the site uses to decrypt and to confirm the
+    key matches what it has on file). The key is forwarded to the site and
+    never stored or logged here.
+    """
+    backup = Backup.query.get_or_404(backup_id)
+    site = backup.site
+    app = current_app._get_current_object()
+    if backup.scope != "full" or not site.restore_ready:
+        flash("Remote restore isn't available for this backup. It must be a "
+              "whole-site backup, and the site must have remote restore enabled "
+              "and registered with this server.", "danger")
+        return redirect(url_for("main.backups"))
+
+    if request.method == "POST":
+        private_key = (request.form.get("private_key") or "").strip()
+        confirm = (request.form.get("confirm") or "").strip().lower()
+        if confirm != "restore":
+            flash("Type RESTORE to confirm overwriting the live site.", "danger")
+            return redirect(url_for("main.backup_restore", backup_id=backup.id))
+        if not private_key:
+            flash("The site's private key is required to decrypt and apply the restore.", "danger")
+            return redirect(url_for("main.backup_restore", backup_id=backup.id))
+        from . import restore_push
+        try:
+            result = restore_push.push_restore(app, site, backup, private_key)
+        except restore_push.RestorePushError as e:
+            # Never include the private key in logs — push_restore doesn't echo it.
+            current_app.logger.warning("remote restore to site %s failed: %s", site.id, e)
+            flash(f"Remote restore failed: {e}", "danger")
+            return redirect(url_for("main.backup_restore", backup_id=backup.id))
+        finally:
+            private_key = None
+        msg = (result or {}).get("message") or "the site accepted the restore."
+        flash(f"Remote restore pushed — {msg} The site is applying the backup and "
+              "recycling its workers; give it a moment, then sign in there.", "success")
+        return redirect(url_for("main.backups"))
+
+    return render_template("backup_restore.html", backup=backup, site=site)
+
+
 @bp.route("/backups/<int:backup_id>/delete", methods=["POST"])
 @login_required
 def backup_delete(backup_id):

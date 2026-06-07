@@ -5,6 +5,49 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-06-07
+
+Adds **remote restore** — an out-of-band recovery path that pushes a stored
+backup from this console back into the live TS Pro site it came from, for
+when that site's data is corrupted or its admin is locked out. **Upgrades are
+safe and automatic; the feature is off until a site opts in.** Requires TS Pro
+**2.11.0+** on the connected site.
+
+### Added
+
+- **Remote restore (push a backup back to the live site).** From a site's
+  full backups in the console you can now push a stored archive back into the
+  running TS Pro install, which decrypts and applies it without needing any
+  admin login on the site — recovering a corrupted database, a locked-out
+  admin, or an accidental login/IP lockout. The site applies it through its
+  existing import path (snapshots the old data first, clears login lockouts,
+  recycles workers).
+- **Auto-pairing over the existing API.** A site publishes its public URL and
+  a shared restore token to this server via the new `POST /api/v1/register`
+  endpoint (called from the TS Pro backup target on save / "Test connection"),
+  mirroring how `/ping` already hands out the E2EE public key. `/ping` now
+  advertises a `remote_restore` capability. The site page shows pairing status.
+- **Restore push client** (`app/restore_push.py`): streams the stored
+  ciphertext (single-shot or chunked, to clear a proxy body cap) to the site's
+  inbound restore endpoints, refusing plain HTTP unless `TSPB_DEBUG` is set.
+
+### Security
+
+- **Two independent secrets gate every restore.** The push carries the shared
+  restore token (authenticates it) **and** the operator's private key, which
+  the site requires to both decrypt the archive and confirm it matches the
+  public key on file — so a stolen token alone cannot push a malicious
+  archive. The token is Fernet-encrypted at rest, compared in constant time,
+  and the whole feature is **off by default** (the site must opt in).
+- **The server stays zero-knowledge.** It only ever forwards ciphertext; the
+  private key the operator pastes at restore time transits this server
+  in-memory and is never written to disk or logs.
+
+### Schema
+
+- `Site` gains `restore_callback_url`, `restore_token_enc`, `restore_enabled`,
+  and `restore_registered_at` (additive boot migration).
+
 ## [1.2.1] — 2026-06-02
 
 ### Fixed
@@ -201,6 +244,7 @@ console to manage it all.
   mounted `/data` volume. Published as
   [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
 
+[1.3.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.3.0
 [1.2.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.1
 [1.2.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.0
 [1.1.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.1.0

@@ -317,6 +317,10 @@ def _migrate_sqlite(db):
             add("site", "last_seen_ip", "last_seen_ip VARCHAR(45)")
             add("site", "e2ee_public_key", "e2ee_public_key VARCHAR(80)")
             add("site", "e2ee_key_ack", "e2ee_key_ack BOOLEAN DEFAULT 0")
+            add("site", "restore_callback_url", "restore_callback_url VARCHAR(500)")
+            add("site", "restore_token_enc", "restore_token_enc BLOB")
+            add("site", "restore_enabled", "restore_enabled BOOLEAN DEFAULT 0")
+            add("site", "restore_registered_at", "restore_registered_at DATETIME")
         if "backup" in existing:
             add("backup", "client_encrypted", "client_encrypted BOOLEAN DEFAULT 0")
             add("backup", "note", "note VARCHAR(500)")
