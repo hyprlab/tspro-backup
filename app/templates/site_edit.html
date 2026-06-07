@@ -116,6 +116,29 @@
   {% endif %}
 </div>
 
+<div class="card">
+  <div class="card-head"><h2>{{ icon('refresh') }} Remote restore</h2></div>
+  <p class="muted">Out-of-band recovery: push a stored whole-site backup back into this
+    site if its data is corrupted or its admin is locked out. The site must opt in (in its
+    TS&nbsp;Pro backup-target settings) and register a callback URL + token with this server.</p>
+  <table class="kv">
+    <tr><th>Status</th><td>
+      {% if site.restore_ready %}<span class="badge badge-lock">{{ icon('check') }} Enabled &amp; paired</span>
+      {% elif site.restore_enabled %}<span class="badge badge-warn">{{ icon('alert') }} Enabled, awaiting registration</span>
+      {% else %}<span class="badge badge-warn">Not enabled by the site</span>{% endif %}
+    </td></tr>
+    {% if site.restore_callback_url %}<tr><th>Callback URL</th><td><code class="conn-val">{{ site.restore_callback_url }}</code></td></tr>{% endif %}
+    <tr><th>Last registered</th><td title="{{ site.restore_registered_at | fmt_dt }}">{{ site.restore_registered_at | ago }}</td></tr>
+  </table>
+  {% if site.restore_ready %}
+  <p class="muted small">Restore a specific backup from the <a href="{{ url_for('main.backups', site=site.id, scope='full') }}">Backups</a> list — you'll be asked for this site's private key and a typed confirmation.</p>
+  {% else %}
+  <p class="muted small">To enable: in this site's TS&nbsp;Pro install, open the backup target for this server,
+    turn on “Allow remote restore”, set the portal's public URL, and save / test the connection. It will
+    then register here automatically.</p>
+  {% endif %}
+</div>
+
 {% if current_user.is_admin() %}
 <div class="card danger-zone">
   <div class="card-head"><h2>{{ icon('alert') }} Danger zone</h2></div>

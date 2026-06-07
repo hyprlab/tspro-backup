@@ -182,6 +182,18 @@ class Site(db.Model):
     last_seen_at = db.Column(db.DateTime)
     last_seen_ip = db.Column(db.String(45))
 
+    # ── Remote restore (push a stored backup back into the live site) ──
+    # Populated by the site itself over POST /api/v1/register: its public
+    # base URL (where its inbound /api/v1/restore endpoints live) and a
+    # shared restore token we present to authenticate the push. The token
+    # is a high-value secret — store it Fernet-encrypted, never in clear.
+    # ``restore_enabled`` mirrors the site's own opt-in: the operator must
+    # turn remote restore on at the TS Pro end before we ever offer it.
+    restore_callback_url = db.Column(db.String(500))
+    restore_token_enc = db.Column(db.LargeBinary)
+    restore_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    restore_registered_at = db.Column(db.DateTime)
+
     backups = db.relationship(
         "Backup", backref="site", cascade="all, delete-orphan",
         order_by="Backup.created_at.desc()",
@@ -227,6 +239,26 @@ class Site(db.Model):
         if not self.e2ee_public_key:
             return None
         return pubkey.fingerprint(self.e2ee_public_key)
+
+    # ── Remote-restore pairing helpers ─────────────────────────────
+    def set_restore_token(self, raw: str):
+        """Store (Fernet-encrypted) the shared token the site published, or
+        clear it when the site disables remote restore."""
+        from .crypto import encrypt
+        self.restore_token_enc = encrypt(raw) if raw else None
+
+    @property
+    def restore_token(self) -> str:
+        """The plaintext restore token to present when pushing a restore."""
+        from .crypto import decrypt
+        return decrypt(self.restore_token_enc) if self.restore_token_enc else ""
+
+    @property
+    def restore_ready(self) -> bool:
+        """True when this site can actually receive a remote restore: it
+        opted in and published both a callback URL and a token."""
+        return bool(self.restore_enabled and self.restore_callback_url
+                    and self.restore_token_enc)
 
     # ── effective retention (override → default) ───────────────────
     def retention(self, settings):

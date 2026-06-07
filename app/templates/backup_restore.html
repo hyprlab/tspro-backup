@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Remote restore · TS Pro Backup{% endblock %}
+{% block page_title %}Remote restore{% endblock %}
+{% block content %}
+
+<div class="card danger-zone">
+  <div class="card-head"><h2>{{ icon('alert') }} Push this backup back to the live site</h2></div>
+  <p class="muted">
+    This sends the selected backup to <strong>{{ site.name }}</strong> and asks it to
+    <strong>overwrite its current database, uploads and keys</strong> with this archive.
+    Use it for disaster recovery — corrupted data, a locked-out admin, or an accidental
+    login/IP lockout — when you can't drive a restore from the site itself. The site keeps a
+    timestamped copy of its pre-restore data, and clears login lockouts so you can sign back in.
+  </p>
+
+  <table class="kv">
+    <tr><th>Target site</th><td>{{ site.name }}</td></tr>
+    <tr><th>Restore endpoint</th><td><code class="conn-val">{{ site.restore_callback_url }}/api/v1/restore</code></td></tr>
+    <tr><th>Archive</th><td><code class="muted small">{{ backup.original_name }}</code></td></tr>
+    <tr><th>Scope</th><td><span class="badge badge-full">{{ backup.scope_label }}</span></td></tr>
+    <tr><th>Size</th><td>{{ backup.size_bytes | fmt_bytes }}</td></tr>
+    <tr><th>Created</th><td title="{{ backup.created_at | fmt_dt }}">{{ backup.created_at | ago }}</td></tr>
+    <tr><th>Encryption key</th><td>
+      {% if backup.e2ee_fingerprint %}<code class="conn-val">{{ backup.e2ee_fingerprint }}</code>
+        <span class="muted small">— the private key you paste below must match this fingerprint</span>
+      {% else %}<span class="muted small">not an E2EE envelope</span>{% endif %}
+    </td></tr>
+  </table>
+
+  <form method="post" action="{{ url_for('main.backup_restore', backup_id=backup.id) }}" class="form"
+        onsubmit="return confirm('Overwrite the live site “{{ site.name }}” with this backup? This cannot be undone on the site.')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <label class="field">
+      <span>Site private key <span class="req">*</span></span>
+      <textarea name="private_key" rows="3" required autocomplete="off" spellcheck="false"
+                placeholder="tspsk_…"></textarea>
+      <span class="muted small">Shown once when the site's keypair was created. The site uses it to
+        decrypt the archive and to confirm it matches the public key on file. It is sent to the site
+        over the connection and never stored here.</span>
+    </label>
+
+    <label class="field">
+      <span>Type <strong>RESTORE</strong> to confirm <span class="req">*</span></span>
+      <input name="confirm" type="text" required autocomplete="off" placeholder="RESTORE">
+    </label>
+
+    <div class="form-actions">
+      <button class="btn btn-danger" type="submit">{{ icon('refresh') }} Push restore to site</button>
+      <a class="btn btn-ghost" href="{{ url_for('main.backups') }}">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
