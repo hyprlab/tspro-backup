@@ -5,6 +5,20 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] — 2026-07-04
+
+Maintenance release. Moves the project's GitHub repository and Docker Hub
+image to the **hyprlab** account. No code or behaviour changes — upgrades
+are safe and automatic.
+
+### Changed
+
+- **New home.** Source now lives at
+  [`hyprlab/tspro-backup`](https://github.com/hyprlab/tspro-backup) and the
+  published image at
+  [`hyprlab/tspro-backup`](https://hub.docker.com/r/hyprlab/tspro-backup).
+  Update your `docker-compose.yml` `image:` reference accordingly.
+
 ## [1.3.0] — 2026-06-07
 
 Adds **remote restore** — an out-of-band recovery path that pushes a stored
@@ -199,7 +213,7 @@ are safe and automatic**, with three one-time effects noted below.
 ## [1.0.0] — 2026-06-01
 
 First public release. An off-site, zero-knowledge backup server for
-[Trusted Servants Pro](https://github.com/viibeware): TS Pro portals push
+[Trusted Servants Pro](https://github.com/hyprlab): TS Pro portals push
 their backup archives here over an authenticated HTTP API, and this server
 stores them under a grandfather-father-son retention policy with a web
 console to manage it all.
@@ -242,12 +256,13 @@ console to manage it all.
 - **Docker deployment.** `python:3.12-slim` image served by gunicorn
   (2 workers, 600s timeout for multi-GB bundles). Data persisted to a
   mounted `/data` volume. Published as
-  [`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup).
+  [`hyprlab/tspro-backup`](https://hub.docker.com/r/hyprlab/tspro-backup).
 
-[1.3.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.3.0
-[1.2.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.1
-[1.2.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.2.0
-[1.1.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.1.0
-[1.0.2]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.2
-[1.0.1]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.1
-[1.0.0]: https://github.com/viibeware/tspro-backup/releases/tag/v1.0.0
+[1.3.1]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.3.1
+[1.3.0]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.3.0
+[1.2.1]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.2.1
+[1.2.0]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.2.0
+[1.1.0]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.1.0
+[1.0.2]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.0.2
+[1.0.1]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.0.1
+[1.0.0]: https://github.com/hyprlab/tspro-backup/releases/tag/v1.0.0

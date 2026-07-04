@@ -7,8 +7,8 @@
 <p align="center">Off-site, encrypted backup storage for Trusted Servants Pro.</p>
 
 <p align="center">
-  <a href="https://hub.docker.com/r/viibeware/tspro-backup"><img alt="Docker Image" src="https://img.shields.io/docker/v/viibeware/tspro-backup?label=docker&sort=semver"></a>
-  <a href="https://hub.docker.com/r/viibeware/tspro-backup"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/viibeware/tspro-backup"></a>
+  <a href="https://hub.docker.com/r/hyprlab/tspro-backup"><img alt="Docker Image" src="https://img.shields.io/docker/v/hyprlab/tspro-backup?label=docker&sort=semver"></a>
+  <a href="https://hub.docker.com/r/hyprlab/tspro-backup"><img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/hyprlab/tspro-backup"></a>
   <a href="LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
 </p>
 
@@ -71,7 +71,7 @@ with the Compose plugin — nothing else.
 Either clone the repo:
 
 ```bash
-git clone https://github.com/viibeware/tspro-backup.git
+git clone https://github.com/hyprlab/tspro-backup.git
 cd tspro-backup
 ```
 
@@ -82,7 +82,7 @@ source checkout needed):
 ```yaml
 services:
   tspro-backup:
-    image: viibeware/tspro-backup:latest
+    image: hyprlab/tspro-backup:latest
     container_name: tspro-backup
     ports:
       - "${TSPB_PORT:-8095}:8000"
@@ -299,9 +299,9 @@ To migrate hosts, stop the container and copy the whole `data/` directory.
 
 This project follows [Semantic Versioning](https://semver.org). See
 [CHANGELOG.md](CHANGELOG.md) for the full history and the
-[releases page](https://github.com/viibeware/tspro-backup/releases) for
+[releases page](https://github.com/hyprlab/tspro-backup/releases) for
 release notes. Images are published to
-[`viibeware/tspro-backup`](https://hub.docker.com/r/viibeware/tspro-backup)
+[`hyprlab/tspro-backup`](https://hub.docker.com/r/hyprlab/tspro-backup)
 tagged by version (e.g. `1.0.0`) and `latest`.
 
 ## License
