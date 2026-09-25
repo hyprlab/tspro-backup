@@ -2,13 +2,16 @@
 
 ## Reporting a problem
 
-Report security problems privately, by email to hyprlab@proton.me. Please
-don't open a public issue.
+Report security problems privately, through GitHub's
+[private vulnerability reporting](https://github.com/hyprlab/tspro-backup/security/advisories/new)
+(Security, then "Report a vulnerability"), or by email to
+hyprlab@proton.me. Please don't open a public issue.
 
 Expect a reply within a week. A fix ships as an urgent patch release
 ([RELEASING.md](RELEASING.md#urgent-patches)), the reporter is credited in the
 changelog unless they ask not to be, and an embargo the reporter proposes is
-respected, ending when the fixed release ships.
+respected, ending when the fixed release ships. Serious issues get a GitHub
+Security Advisory.
 
 Only the latest stable release receives security fixes.
 
