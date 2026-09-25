@@ -2,21 +2,25 @@
 .git
 .gitignore
 .dockerignore
+.github
+.claude
 .venv/
+.pytest_cache/
 **/__pycache__/
 *.pyc
 *.pyo
 
-# Runtime data & secrets — never bake these into an image.
+# Runtime data and secrets: never bake these into an image.
 .env
 data/
 temp/
 *.db
 *.key
 
-# Docs / dev cruft not needed at runtime.
-README.md
-CHANGELOG.md
-RELEASE_NOTES.md
-CLAUDE.md
+# Docs, tests and release tooling are not needed at runtime.
+docs/
+tests/
+tools/
+*.md
+CONTRIBUTORS
 LICENSE

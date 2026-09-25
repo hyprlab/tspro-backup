@@ -1,0 +1,4 @@
+# People whose code, art or translation is in TS Pro Backup, one per line:
+#   Name @github-login
+# tools/release-notes.sh keeps the @ only for handles listed here; what each
+# person did is in docs/CREDITS.md. The maintainer is not listed.
