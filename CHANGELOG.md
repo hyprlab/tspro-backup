@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Security
+
+- **cryptography updated to 50.0.1**, clearing three advisories reported
+  against 48.0.1 (PYSEC-2026-3552, PYSEC-2026-3553, PYSEC-2026-3554). The
+  backup formats are unchanged: archives stored by earlier versions still
+  download and restore as before.
+
 ## [1.3.2] - 2026-07-31
 
 Security-hardening patch release focused on the remote-restore path.
