@@ -5,7 +5,9 @@ All notable changes to **TS Pro Backup** are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.2] — 2026-07-31
+## Unreleased
+
+## [1.3.2] - 2026-07-31
 
 Security-hardening patch release focused on the remote-restore path.
 **Upgrades are safe and automatic** (additive schema migration on boot).
@@ -13,7 +15,7 @@ Security-hardening patch release focused on the remote-restore path.
 ### Security
 
 - **Restore pushes no longer follow HTTP redirects.** A site (or a proxy in
-  front of it) answering the restore push with a 30x used to be followed —
+  front of it) answering the restore push with a 30x used to be followed,
   re-sending the restore token and the operator's private key to the redirect
   target, potentially over plain HTTP. Any redirect is now a hard error, the
   https requirement is enforced per request, and connect/read timeouts are
@@ -22,17 +24,17 @@ Security-hardening patch release focused on the remote-restore path.
   site's API key can re-register its restore callback URL. The restore page
   now tracks the endpoint the operator last confirmed; if it changed (or was
   never confirmed) a warning banner appears and the operator must type the
-  endpoint's full hostname — not just RESTORE — before a push is accepted.
+  endpoint's full hostname, not just RESTORE, before a push is accepted.
   Admins can additionally **pin** the expected callback host per site, every
   (re)registration is logged with old→new URL and origin IP, and
   registration URLs containing credentials are rejected.
 - **Show-once secrets no longer transit the session cookie.** Newly issued
   API keys and E2EE private keys were stashed in the (signed but unencrypted)
   client-side session cookie for the reveal modal. They now live in a
-  server-side one-time store — Fernet-encrypted, deleted on first read,
-  15-minute TTL — and the cookie carries only a random nonce.
+  server-side one-time store (Fernet-encrypted, deleted on first read,
+  15-minute TTL), and the cookie carries only a random nonce.
 - **Dependency updates.** Flask 3.1.3, Werkzeug 3.1.6, cryptography 48.0.1,
-  requests 2.33.0 — clearing all known advisories reported by `pip-audit`.
+  requests 2.33.0, clearing all known advisories reported by `pip-audit`.
 - **Upload capacity checks are race-free and count peak usage.** Chunk
   uploads are checked against free-disk headroom *before* bytes land on disk
   and are serialized per upload; finalize accounts for staging + reassembled
@@ -50,12 +52,12 @@ Security-hardening patch release focused on the remote-restore path.
 
 - A `tests/` pytest suite covering the regressions above (redirect refusal,
   endpoint re-confirmation, reveal-once semantics, capacity/cleanup/reaper
-  behaviour, auth-failure logging).
+  behavior, auth-failure logging).
 
-## [1.3.1] — 2026-07-04
+## [1.3.1] - 2026-07-04
 
 Maintenance release. Moves the project's GitHub repository and Docker Hub
-image to the **hyprlab** account. No code or behaviour changes — upgrades
+image to the **hyprlab** account. No code or behavior changes; upgrades
 are safe and automatic.
 
 ### Changed
@@ -66,9 +68,9 @@ are safe and automatic.
   [`hyprlab/tspro-backup`](https://hub.docker.com/r/hyprlab/tspro-backup).
   Update your `docker-compose.yml` `image:` reference accordingly.
 
-## [1.3.0] — 2026-06-07
+## [1.3.0] - 2026-06-07
 
-Adds **remote restore** — an out-of-band recovery path that pushes a stored
+Adds **remote restore**: an out-of-band recovery path that pushes a stored
 backup from this console back into the live TS Pro site it came from, for
 when that site's data is corrupted or its admin is locked out. **Upgrades are
 safe and automatic; the feature is off until a site opts in.** Requires TS Pro
@@ -79,7 +81,7 @@ safe and automatic; the feature is off until a site opts in.** Requires TS Pro
 - **Remote restore (push a backup back to the live site).** From a site's
   full backups in the console you can now push a stored archive back into the
   running TS Pro install, which decrypts and applies it without needing any
-  admin login on the site — recovering a corrupted database, a locked-out
+  admin login on the site, recovering a corrupted database, a locked-out
   admin, or an accidental login/IP lockout. The site applies it through its
   existing import path (snapshots the old data first, clears login lockouts,
   recycles workers).
@@ -97,7 +99,7 @@ safe and automatic; the feature is off until a site opts in.** Requires TS Pro
 - **Two independent secrets gate every restore.** The push carries the shared
   restore token (authenticates it) **and** the operator's private key, which
   the site requires to both decrypt the archive and confirm it matches the
-  public key on file — so a stolen token alone cannot push a malicious
+  public key on file, so a stolen token alone cannot push a malicious
   archive. The token is Fernet-encrypted at rest, compared in constant time,
   and the whole feature is **off by default** (the site must opt in).
 - **The server stays zero-knowledge.** It only ever forwards ciphertext; the
@@ -109,20 +111,20 @@ safe and automatic; the feature is off until a site opts in.** Requires TS Pro
 - `Site` gains `restore_callback_url`, `restore_token_enc`, `restore_enabled`,
   and `restore_registered_at` (additive boot migration).
 
-## [1.2.1] — 2026-06-02
+## [1.2.1] - 2026-06-02
 
 ### Fixed
 
 - **Console login broke with `400 Bad Request: The referrer header is missing.`
   over HTTPS.** The `Referrer-Policy: no-referrer` header introduced in 1.1.0
   made browsers omit the `Referer` header, which Flask-WTF's strict CSRF
-  referrer check (`WTF_CSRF_SSL_STRICT`, on over HTTPS) requires — so every
+  referrer check (`WTF_CSRF_SSL_STRICT`, on over HTTPS) requires, so every
   console form POST, including sign-in, was rejected on a TLS deployment.
   Changed the policy to `same-origin`, which keeps the `Referer` on
   same-origin requests (still withholding it from external sites). **Anyone
   running 1.1.0 or 1.2.0 behind TLS should upgrade to 1.2.1.**
 
-## [1.2.0] — 2026-06-02
+## [1.2.0] - 2026-06-02
 
 A follow-up hardening release that completes the privilege-separation work
 and adds defence-in-depth from the security review. **Upgrades are safe and
@@ -132,7 +134,7 @@ automatic.**
 
 - **Limited `user` role enforced.** Non-admin (`user`) operators can no longer
   rotate a site's API key or encryption keypair, delete a site, or change a
-  site's encryption policy (`require_e2ee` / `encrypt_at_rest`) — those are now
+  site's encryption policy (`require_e2ee` / `encrypt_at_rest`). Those are now
   admin-only, enforced server-side and hidden in the UI. `user` accounts keep
   "manage sites & backups" (create/edit a site's name + retention, browse and
   delete backups).
@@ -153,7 +155,7 @@ automatic.**
   (`-w 2 --threads 4`), so a couple of slow multi-GB transfers can't tie up
   every worker and stall the console.
 
-## [1.1.0] — 2026-06-02
+## [1.1.0] - 2026-06-02
 
 A security-hardening release. Following a full multi-agent security review,
 this adds brute-force protection to the console login and closes a range of
@@ -163,13 +165,13 @@ are safe and automatic**, with three one-time effects noted below.
 ### Security
 
 - **Console login lockout.** Failed sign-ins are rate-limited with a
-  DB-backed sliding window — after `TSPB_LOGIN_MAX_FAILURES` (default 5)
+  DB-backed sliding window: after `TSPB_LOGIN_MAX_FAILURES` (default 5)
   failures for a username **or** client IP within `TSPB_LOGIN_WINDOW_MINUTES`
   (default 15), further attempts are refused (HTTP 429) until the oldest
   failures age out. Holds across workers and restarts.
 - **No more usable default signing key.** `TSPB_SECRET_KEY`, when unset, now
   auto-generates and persists a random key to `data/session.key` instead of
-  falling back to a shipped constant — closing an admin-session-forgery path
+  falling back to a shipped constant, closing an admin-session-forgery path
   for non-compose deployments.
 - **Forced password change.** An account still using the default `admin`
   password is funnelled through a one-time change wizard on first sign-in
@@ -187,7 +189,7 @@ are safe and automatic**, with three one-time effects noted below.
   the server holds no private key, so it validates format, not ciphertext.)
 - **Upload denial-of-service caps.** Chunked uploads now enforce a per-chunk
   cap, a `total_chunks` cap, a cumulative-size cap, and a free-disk check,
-  plus an optional per-site storage quota (`TSPB_SITE_QUOTA_MB`) — one site
+  plus an optional per-site storage quota (`TSPB_SITE_QUOTA_MB`), so one site
   key can no longer fill the disk. `total_chunks` is mandatory at finalize and
   chunks must be contiguous, so a partial upload can't become a silently
   truncated backup.
@@ -217,31 +219,31 @@ are safe and automatic**, with three one-time effects noted below.
 ### Upgrade notes
 
 - All current console sessions are invalidated once (the session token format
-  changed) — operators simply sign in again.
+  changed); operators sign in again.
 - Any admin still using the `admin` password is sent through the forced
   change wizard on next sign-in.
 - A site that has E2EE required but no encryption key must have its keypair
   rotated in the console before it can accept uploads again.
 
-## [1.0.2] — 2026-06-02
+## [1.0.2] - 2026-06-02
 
 ### Changed
 
 - **Adaptive credentials modal.** The one-time site-credentials reveal now
   has a fixed header and footer with an internally-scrolling body, so it
-  fits any viewport height instead of overflowing on short screens — the
+  fits any viewport height instead of overflowing on short screens: the
   title and the **Done** button stay visible while the key fields scroll.
 - **Mobile-responsive credentials modal.** Tighter padding on small screens,
   full-width copy buttons that wrap instead of overflowing, and `100dvh`
   sizing that accounts for mobile browser chrome.
 
-## [1.0.1] — 2026-06-02
+## [1.0.1] - 2026-06-02
 
 ### Added
 
 - **API endpoint in the credentials modal.** The one-time site-credentials
   reveal now shows the API endpoint (`…/api/v1`) with its own copy button,
-  alongside the API key and private key — no need to hunt for it separately.
+  alongside the API key and private key, so there is no need to look for it separately.
 - **Encryption key fingerprint in the credentials modal.** The site's
   public-key fingerprint is shown and copyable in the same modal, so you can
   confirm it against TS Pro right after creating or rotating a keypair.
@@ -257,7 +259,7 @@ are safe and automatic**, with three one-time effects noted below.
 - Tidied the site-credentials modal: each field's description now sits on
   its own line under the key box, so the “API key” label no longer wraps.
 
-## [1.0.0] — 2026-06-01
+## [1.0.0] - 2026-06-01
 
 First public release. An off-site, zero-knowledge backup server for
 [Trusted Servants Pro](https://github.com/hyprlab): TS Pro portals push
@@ -286,7 +288,7 @@ console to manage it all.
 - **HTTP API (`/api/v1`).** Per-site API key auth (Bearer / `X-API-Key`),
   CSRF-exempt and stateless. Endpoints: `ping`, single-shot and chunked
   uploads (`backups`, `backups/chunk`, `backups/finalize`), `list`,
-  `metadata`, `download`, and `delete` — mirroring TS Pro's existing
+  `metadata`, `download`, and `delete`, mirroring TS Pro's existing
   backup-backend interface.
 - **Chunked uploads** for archives larger than a fronting proxy's body cap:
   stage chunks by `upload_id`, then reassemble and ingest on finalize.
